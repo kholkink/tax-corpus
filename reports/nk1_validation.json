@@ -48,12 +48,6 @@
   "infos": [
     {
       "severity": "info",
-      "rule": "repealed_units",
-      "unit_id": null,
-      "message": "статей с пометкой «утратила силу»: 3 — nk1.ch1.art9, nk1.ch2.art13, nk1.ch2.art14"
-    },
-    {
-      "severity": "info",
       "rule": "fractional_numbers",
       "unit_id": null,
       "message": "дробные номера (317): nk1.ch1.art1.p5-1, nk1.ch1.art4.p3-1, nk1.ch1.art5.p4-1, nk1.ch1.art5.p4-2, nk1.ch1.art5.p4-2-1, nk1.ch1.art5.p4-3, nk1.ch1.art5.p4-4, nk1.ch1.art5.p4-5, nk1.ch1.art5.p4-6, nk1.ch1.art6-1, nk1.ch1.art11-1, nk1.ch1.art11-2, nk1.ch1.art11-3, nk1.ch2-1.art18-1, nk1.ch2-1.art18-2 …"

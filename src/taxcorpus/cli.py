@@ -187,14 +187,19 @@ def cmd_unit(args: argparse.Namespace) -> int:
         print(f"{record['unit_id']} — {record['label']}")
         if record["title"]:
             print(record["title"])
-        print(f"интервал действия: {record['valid_from']} … {record['valid_to'] or 'наст. время'}")
+        if record.get("context"):
+            print(f"контекст: {record['context']}")
+        print(f"интервал действия: {record['valid_from'] or '?'} … "
+              f"{record['valid_to'] or 'наст. время'}")
         if record["edit_note"]:
             print(f"пометка: {record['edit_note']}")
         print()
-        print(record["text"])
+        # полный текст (с подпунктами) — то, что цитирует юрист; text — только свои абзацы
+        print(record.get("full_text") or record["text"])
         for row in list_amendments(conn, args.id):
+            eff = f", вступила {row['effective_date']}" if row.get("effective_date") else ""
             print(f"\n[правка] {row['operation']}: ФЗ № {row['amending_act_number']} "
-                  f"от {row['amending_act_date']}")
+                  f"от {row['amending_act_date']}{eff}")
     finally:
         conn.close()
     return 0
@@ -227,7 +232,8 @@ def cmd_search(args: argparse.Namespace) -> int:
 
     conn = connect(args.db_url)
     try:
-        rows = search_units(conn, args.query, args.as_of, limit=args.limit, kind=args.kind)
+        rows = search_units(conn, args.query, args.as_of, limit=args.limit, kind=args.kind,
+                            chunks_only=not args.all_kinds)
     finally:
         conn.close()
     if not rows:
@@ -319,6 +325,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_search.add_argument("--as-of", default=date.today().isoformat())
     p_search.add_argument("--limit", type=int, default=10)
     p_search.add_argument("--kind", default=None, help="фильтр по виду единицы: article|point|...")
+    p_search.add_argument("--all-kinds", action="store_true",
+                          help="искать по всем единицам, а не только по чанкам (пункт/подпункт)")
     p_search.add_argument("--db-url", default=None)
     p_search.set_defaults(func=cmd_search)
 
