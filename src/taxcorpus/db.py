@@ -121,12 +121,13 @@ def load_corpus(conn: psycopg.Connection, meta: dict, units: list[dict],
             cur.executemany(
                 """
                 INSERT INTO unit (unit_id, act_id, parent_unit_id, kind, number,
-                                  label, title, duplicate_of)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                  label, title, duplicate_of, context, is_chunk)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 [
                     (r["unit_id"], act_id, r["parent_unit_id"], r["kind"],
-                     r["number"], r["label"], r["title"], r.get("duplicate_of"))
+                     r["number"], r["label"], r["title"], r.get("duplicate_of"),
+                     r.get("context"), bool(r.get("is_chunk")))
                     for r in units
                 ],
             )
@@ -150,12 +151,13 @@ def load_corpus(conn: psycopg.Connection, meta: dict, units: list[dict],
             cur.executemany(
                 """
                 INSERT INTO unit_text (unit_id, edition_id, valid_from, valid_to,
-                                       text, text_hash, edit_note, provenance)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                       text, full_text, text_hash, edit_note, provenance)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 [
                     (r["unit_id"], edition_id, *interval(r["unit_id"]), r["text"],
-                     r["text_hash"], r["edit_note"], Json(provenance))
+                     r.get("full_text") or r["text"], r["text_hash"], r["edit_note"],
+                     Json(provenance))
                     for r in units
                 ],
             )
@@ -209,7 +211,8 @@ def get_unit(conn, unit_id: str, as_of_date: str) -> dict | None:
     row = conn.execute(
         """
         SELECT u.unit_id, u.kind, u.number, u.label, u.title, u.duplicate_of,
-               t.valid_from, t.valid_to, t.text, t.text_hash, t.edit_note,
+               u.context, u.is_chunk,
+               t.valid_from, t.valid_to, t.text, t.full_text, t.text_hash, t.edit_note,
                e.edition_id
         FROM unit u
         JOIN unit_text t ON t.unit_id = u.unit_id
@@ -265,39 +268,47 @@ def expand_query(query: str) -> list[str]:
 
 
 def search_units(conn, query: str, as_of_date: str, limit: int = 10,
-                 kind: str | None = None) -> list[dict]:
+                 kind: str | None = None, chunks_only: bool = True) -> list[dict]:
     """Полнотекстовый поиск (лексическое плечо гибридного поиска, слой 4; ts_rank, не BM25).
 
+    Чанк = пункт/подпункт (или статья без пунктов) с полным текстом и контекстом
+    заголовков (вес B) — как в плане, §5 слой 4. По умолчанию ищем только по чанкам,
+    чтобы одна и та же фраза не всплывала на уровне статьи, пункта и абзаца сразу;
+    kind= переключает на конкретный вид единицы, chunks_only=False — на все.
     websearch_to_tsquery понимает естественный синтаксис («камеральная OR
     выездная проверка»); индекс всегда фильтруется по as_of_date. Аббревиатуры
     (НДС, ЕНС, ...) расширяются полными формами как OR-ветки — кодекс их
     пишет словами.
     """
     expansions = expand_query(query)
+    chunk_filter = chunks_only and kind is None
     return conn.execute(
         """
-        SELECT u.unit_id, u.kind, u.label, u.title,
+        SELECT u.unit_id, u.kind, u.label, u.title, u.context,
                GREATEST(
-                   ts_rank(t.search_vector, q_main),
+                   ts_rank(setweight(t.search_vector, 'A') || setweight(u.context_vector, 'B'),
+                           q_main),
                    COALESCE((SELECT max(ts_rank(t.search_vector,
                                    phraseto_tsquery('russian', e.phrase)))
                              FROM unnest(%s::text[]) AS e(phrase)), 0)
                ) AS rank,
-               ts_headline('russian', t.text, q_main,
+               ts_headline('russian', coalesce(t.full_text, t.text), q_main,
                            'MaxWords=40, MinWords=15, StartSel=«, StopSel=», MaxFragments=2')
                    AS snippet
         FROM unit_text t
         JOIN unit u ON u.unit_id = t.unit_id,
              websearch_to_tsquery('russian', %s) q_main
         WHERE (t.search_vector @@ q_main
+            OR u.context_vector @@ q_main
             OR EXISTS (SELECT 1 FROM unnest(%s::text[]) AS e(phrase)
                        WHERE t.search_vector @@ phraseto_tsquery('russian', e.phrase)))
           AND (t.valid_from IS NULL OR t.valid_from <= %s)
           AND (t.valid_to IS NULL OR t.valid_to > %s)
           AND (%s::text IS NULL OR u.kind = %s::text)
+          AND (NOT %s::boolean OR u.is_chunk)
         ORDER BY rank DESC
         LIMIT %s
         """,
         (expansions, query, expansions,
-         as_of_date, as_of_date, kind, kind, limit),
+         as_of_date, as_of_date, kind, kind, chunk_filter, limit),
     ).fetchall()

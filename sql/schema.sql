@@ -32,8 +32,17 @@ CREATE TABLE IF NOT EXISTS unit (
     label          TEXT NOT NULL,               -- «подпункт 1 пункта 3 статьи 164 НК РФ»
     title          TEXT,
     duplicate_of   TEXT REFERENCES unit(unit_id), -- заполнено, если источник содержал повторный маркер
+    context        TEXT,                        -- «НК РФ, часть 1, глава 14 «…», статья 88 «…»» — контекст чанка
+    is_chunk       BOOLEAN NOT NULL DEFAULT false, -- единица поиска: пункт/подпункт, статья без пунктов
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- миграция для баз, созданных до появления колонок
+ALTER TABLE unit ADD COLUMN IF NOT EXISTS context TEXT;
+ALTER TABLE unit ADD COLUMN IF NOT EXISTS is_chunk BOOLEAN NOT NULL DEFAULT false;
+-- заголовочный контекст участвует в поиске (вес B, см. search_units)
+ALTER TABLE unit ADD COLUMN IF NOT EXISTS context_vector tsvector
+    GENERATED ALWAYS AS (to_tsvector('russian', coalesce(context, '') || ' ' || coalesce(title, ''))) STORED;
 
 CREATE INDEX IF NOT EXISTS idx_unit_act ON unit(act_id);
 CREATE INDEX IF NOT EXISTS idx_unit_parent ON unit(parent_unit_id);
@@ -47,7 +56,8 @@ CREATE TABLE IF NOT EXISTS unit_text (
     edition_id INT REFERENCES edition(edition_id),
     valid_from DATE,
     valid_to   DATE,
-    text       TEXT NOT NULL,
+    text       TEXT NOT NULL,                   -- собственный текст единицы (доказательный)
+    full_text  TEXT,                            -- текст с вложенными пунктами/подпунктами (как читает юрист)
     text_hash  TEXT NOT NULL,
     edit_note  TEXT,                            -- «(в ред. Федерального закона от ...)»
     provenance JSONB NOT NULL DEFAULT '{}'::jsonb
@@ -55,10 +65,20 @@ CREATE TABLE IF NOT EXISTS unit_text (
 
 CREATE INDEX IF NOT EXISTS idx_unit_text_unit ON unit_text(unit_id);
 
--- слой 4 плана: полнотекстовый поиск (BM25-подобный ts_rank) по текстам норм.
+-- миграция: до появления full_text поисковый вектор строился по text
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                   WHERE table_name = 'unit_text' AND column_name = 'full_text') THEN
+        ALTER TABLE unit_text ADD COLUMN full_text TEXT;
+        ALTER TABLE unit_text DROP COLUMN IF EXISTS search_vector;
+    END IF;
+END $$;
+
+-- слой 4 плана: полнотекстовый поиск (ts_rank) по полному тексту единицы.
 -- generated column пересчитывается сам при перезагрузке корпуса.
 ALTER TABLE unit_text ADD COLUMN IF NOT EXISTS search_vector tsvector
-    GENERATED ALWAYS AS (to_tsvector('russian', text)) STORED;
+    GENERATED ALWAYS AS (to_tsvector('russian', coalesce(full_text, text))) STORED;
 CREATE INDEX IF NOT EXISTS idx_unit_text_search ON unit_text USING GIN (search_vector);
 
 -- рёбра графа ссылок; to_unit_id/status заполняются резолвером (resolver.py)

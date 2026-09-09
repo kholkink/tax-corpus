@@ -4,15 +4,15 @@
 
 | вид единицы | количество |
 |---|---|
-| paragraph | 4352 |
-| point | 1522 |
+| paragraph | 4345 |
+| point | 1562 |
 | subpoint | 1098 |
 | article | 274 |
 | chapter | 39 |
 | section | 10 |
 | part | 1 |
 
-**Итог: 4 ошибок, 3 предупреждений, 2 замечаний.**
+**Итог: 4 ошибок, 3 предупреждений, 1 замечаний.**
 
 ## Ошибки (4)
 
@@ -27,7 +27,6 @@
 - **empty_text** `nk1.ch16.art120.p4` — единица вида point без текста
 - **empty_text** `nk1.ch16.art121` — единица вида article без текста
 
-## Замечания (2)
+## Замечания (1)
 
-- **repealed_units** — статей с пометкой «утратила силу»: 3 — nk1.ch1.art9, nk1.ch2.art13, nk1.ch2.art14
 - **fractional_numbers** — дробные номера (317): nk1.ch1.art1.p5-1, nk1.ch1.art4.p3-1, nk1.ch1.art5.p4-1, nk1.ch1.art5.p4-2, nk1.ch1.art5.p4-2-1, nk1.ch1.art5.p4-3, nk1.ch1.art5.p4-4, nk1.ch1.art5.p4-5, nk1.ch1.art5.p4-6, nk1.ch1.art6-1, nk1.ch1.art11-1, nk1.ch1.art11-2, nk1.ch1.art11-3, nk1.ch2-1.art18-1, nk1.ch2-1.art18-2 …

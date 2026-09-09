@@ -10,7 +10,7 @@
   "source_path": "data/processed/nk1_red199.txt",
   "source_format": "txt",
   "source_sha256": "sha256:9a33a8e5a76dc1b8349a5a1f523ea3528ae858c73020b9787bdcb088509316ed",
-  "retrieved_at": "2026-09-09T14:08:48.170855+00:00",
+  "retrieved_at": "2026-09-09T17:53:26.450969+00:00",
   "valid_from": "2026-08-04",
   "stats": {
     "paragraphs_total": 6614,
@@ -19,13 +19,16 @@
       "section": 10,
       "chapter": 39,
       "article": 274,
-      "point": 1522,
+      "point": 1562,
       "subpoint": 1098
     },
-    "edition_notes": 1825,
+    "edition_notes": 1840,
     "titles_from_next_line": 1,
-    "stray_subpoints": 39,
+    "stray_subpoints": 0,
     "detokenized": 366,
-    "duplicate_suffixes": 13
+    "duplicate_suffixes": 13,
+    "title_notes": 8,
+    "article_level_points": 39,
+    "pending_title_note": null
   }
 }

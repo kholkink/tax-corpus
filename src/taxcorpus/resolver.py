@@ -178,11 +178,13 @@ def resolve_all(records: list[dict], references: list[dict],
 
 # --- инструмент слоя 5: resolve_citation("п. 3 ст. 164") -> unit_id ---
 
+# номера пунктов и подпунктов бывают дробными и дефисными: «п. 18.1 ст. 217», «подп. 2.8-1 п. 1 ст. 164»
+_NUM = r"\d+(?:\.\d+)?(?:-\d+)?"
 RE_CITATION = re.compile(
-    r"(?<!\w)(?:(?:подп|подпункт)\.?\s*(?P<sub>\d+)\s*)?"
-    r"(?:п\.?\s*(?P<point>\d+)\s*)?"
+    rf"(?<!\w)(?:(?:подп|подпункт)\.?\s*(?P<sub>{_NUM})\s*)?"
+    rf"(?:п\.?\s*(?P<point>{_NUM})\s*)?"
     r"(?:ст|статья|статьи|статьей|статье|статью)\.?\s*"
-    r"(?P<article>\d+(?:\.\d+)?(?:-\d+)?)",
+    rf"(?P<article>{_NUM})",
     re.IGNORECASE,
 )
 RE_CITATION_PLAIN_ART = re.compile(
@@ -190,8 +192,8 @@ RE_CITATION_PLAIN_ART = re.compile(
 )
 # контекстная цитата без статьи: «п. 2», «подп. 3 п. 1» — относительно статьи-источника
 RE_CITATION_CONTEXT = re.compile(
-    r"(?<!\w)(?:(?:подп|подпункт)\.?\s*(?P<sub>\d+)\s*)?"
-    r"(?:п|пункт)\.?\s*(?P<point>\d+(?:\.\d+)?)", re.IGNORECASE,
+    rf"(?<!\w)(?:(?:подп|подпункт)\.?\s*(?P<sub>{_NUM})\s*)?"
+    rf"(?:п|пункт)\.?\s*(?P<point>{_NUM})", re.IGNORECASE,
 )
 
 

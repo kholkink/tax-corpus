@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from .models import Unit, build_label
+from .models import KIND_RU, Unit, build_label
 from .normalize import normalize_text, split_paragraphs
 
 # --- маркеры структуры (проверяются по началу абзаца) ---
@@ -29,14 +29,20 @@ RE_SUBSECTION = re.compile(r"^(?:Подраздел|ПОДРАЗДЕЛ)\s+(\d+)\
 RE_CHAPTER = re.compile(r"^(?:Глава|ГЛАВА)\s+(\d+(?:\.\d+)?(?:-\d+)?)\.?\s*(.*)$")
 # дефисные номера реальны в НК: «статья 25.12-1», «статья 105.16-6»
 RE_ARTICLE = re.compile(r"^(?:Статья|СТАТЬЯ)\s+(\d+(?:\.\d+)?(?:-\d+)?)\.?\s*(.*)$")
-RE_SUBPOINT = re.compile(r"^(\d+)\)\s+(.*)$")
-RE_POINT = re.compile(r"^(\d+(?:\.\d+)?(?:-\d+)?)[.)]\s+(.*)$")
+# подпункты бывают дробными и дефисными: «3.1)», «2.8-1)» (банк: «31)», «28-1)»);
+# пункты — только с точкой: «1.», «2.1.», «8.10.»
+RE_SUBPOINT = re.compile(r"^(\d+(?:\.\d+)?(?:-\d+)?)\)\s+(.*)$")
+# после точки пробел может отсутствовать («1.Налогоплательщиками…»), но за точкой
+# не должна идти цифра — иначе это дата или число, а не маркер
+RE_POINT = re.compile(r"^(\d+(?:\.\d+)?(?:-\d+)?)\.(?!\d)\s*(\S.*)$")
 
 # служебные абзацы-пометки редакции: «(в ред. Федерального закона от ...)»
 # и пометки банка ГАС в угловых скобках: «<В новой ред. ...>», «<Введена ...>»,
 # «<Изменения: ...>» (конвертер склеивает многоабзацные пометки в один абзац)
 # закрывающая «>» у банка иногда теряется: «13. <Утратил силу с 1 июля 2026 г.: … N 425-ФЗ»
 RE_EDITION_NOTE = re.compile(r"^(?:\((?:в ред\.|введен|введена|ред\.)[^)]*\)|<.+>?)$")
+# заголовок + пометка в одном абзаце: «ТОРГОВЫЙ СБОР <Глава 33 введена …>»
+RE_TITLE_NOTE = re.compile(r"^(.*?)\s*(<.+>?)$")
 # самостоятельная единица-«огрызок»: «Статья 20. Утратила силу.»
 RE_REPEALED = re.compile(r"(?i)^утратил[аи]?\s+силу\.?\s*$")
 
@@ -80,6 +86,9 @@ class ParseStats:
     stray_subpoints: int = 0
     detokenized: int = 0  # восстановленных дробных номеров («61» -> 6.1)
     duplicate_suffixes: int = 0  # повторных ID, разрешённых суффиксом «@2»
+    title_notes: int = 0  # пометок, отделённых от заголовков глав/статей
+    article_level_points: int = 0  # «N)» прямо под статьёй, принятых за пункты
+    pending_title_note: str | None = None  # служебное: пометка из последнего заголовка
 
 
 def _int_part(number: str) -> int:
@@ -104,8 +113,9 @@ def _detokenize(number: str, base: int | None, stats: ParseStats) -> str:
     prefix = str(base)
     if number.startswith(prefix) and len(number) > len(prefix):
         rest = number[len(prefix):]
-        # остаток — целое либо дефисный номер: «2512-1» -> 25.12-1
-        if re.fullmatch(r"\d+(-\d+)*", rest) and re.match(r"^\d+", rest) and int(rest.split("-")[0]) >= 1:
+        # остаток — целое, дефисный или многоточечный номер: «2512-1» -> 25.12-1,
+        # «34625.1» -> 346.25.1 (иначе рвётся цепочка восстановления до конца главы)
+        if re.fullmatch(r"\d+(?:\.\d+)*(?:-\d+)*", rest) and int(re.match(r"\d+", rest).group(0)) >= 1:
             stats.detokenized += 1
             return f"{prefix}.{rest}"
     return number
@@ -154,6 +164,10 @@ def _extract_title(unit_kind: str, remainder: str, blocks: list[str],
                 candidate = nxt
                 i += 1
                 stats.titles_from_next_line += 1
+    # пометка банка склеена с заголовком: «АКЦИЗЫ <Глава введена Федеральным законом …>»
+    if candidate and (m := RE_TITLE_NOTE.match(candidate)):
+        candidate, note = m.group(1).strip(), m.group(2).strip()
+        stats.pending_title_note = note
     if candidate and RE_REPEALED.match(candidate):
         return None, candidate, i
     return candidate or None, None, i
@@ -226,22 +240,40 @@ def parse_code(raw_text: str, act_code: str = "nk1") -> tuple[Unit, ParseStats]:
             stack = [root]
             continue
 
-        if kind == "subpoint" and not any(u.kind == "point" for u in stack):
-            # подпункт вне пункта — грамматическая ошибка источника; сохраняем как текст
-            stack[-1].paragraphs.append(block)
-            stats.stray_subpoints += 1
-            continue
+        paren_point = False
+        if kind == "subpoint":
+            enclosing_point = next((u for u in reversed(stack) if u.kind == "point"), None)
+            if enclosing_point is None or enclosing_point.paren_point:
+                if any(u.kind == "article" for u in stack):
+                    # «1) …», «18.1) …» прямо под статьёй (ст. 217, 270 НК): юридически это
+                    # пункты — цитируются «п. 18.1 ст. 217»; следующие «N)» — их соседи,
+                    # а не подпункты; номер восстанавливается как у пункта
+                    kind, paren_point = "point", True
+                    number = _detokenize(marker[1], point_base, stats)
+                    point_base = _int_part(number)
+                    subpoint_base = None
+                    stats.article_level_points += 1
+                else:
+                    # «N)» вне статьи — грамматическая ошибка источника; сохраняем как текст
+                    stack[-1].paragraphs.append(block)
+                    stats.stray_subpoints += 1
+                    continue
 
         while stack and stack[-1].kind not in ALLOWED_PARENTS[kind]:
             stack.pop()
         if not stack:
             stack = [root]
 
-        unit = Unit(kind=kind, number=number)
+        unit = Unit(kind=kind, number=number, paren_point=paren_point)
         if kind in ("part", "section", "subsection", "chapter", "article"):
+            stats.pending_title_note = None
             unit.title, repealed_text, i = _extract_title(kind, remainder, blocks, i, stats)
             if repealed_text:
                 unit.paragraphs.append(repealed_text)
+            if stats.pending_title_note:
+                _add_edit_note(unit, stats.pending_title_note, stats)
+                stats.title_notes += 1
+                stats.pending_title_note = None
         elif RE_EDITION_NOTE.match(remainder.strip()):
             # «13. <Утратил силу с 1 января 2023 г.: …>» — пометка в одном абзаце
             # с маркером: это история единицы, а не текст нормы
@@ -311,7 +343,50 @@ def build_unit_id(path: list[Unit], act_code: str) -> str:
     return head + ("." + ".".join(tail) if tail else "")
 
 
-def unit_record(node: Unit, act_code: str) -> dict:
+def full_text(node: Unit) -> str:
+    """Текст единицы целиком, как её читает юрист: собственные абзацы плюс
+    вложенные пункты/подпункты в порядке документа (абзацы-дети не дублируются —
+    они и есть собственные абзацы). Для поиска и get_unit; `text` остаётся
+    «доказательным» текстом самой единицы."""
+    parts = [node.text] if node.paragraphs else []
+    for child in node.children:
+        if child.kind == "paragraph":
+            continue
+        child_text = full_text(child)
+        if child_text:
+            head = ""
+            if child.kind == "point" and child.number:
+                head = f"{child.number}. "
+            elif child.kind == "subpoint" and child.number:
+                head = f"{child.number}) "
+            parts.append(head + child_text)
+    return "\n\n".join(parts)
+
+
+def build_context(path: list[Unit], act_short: str = "НК РФ") -> str:
+    """Контекст заголовков для чанка (слой 4 плана): «НК РФ, часть 1, раздел V
+    «Налоговая декларация и налоговый контроль», глава 14 «Налоговый контроль»,
+    статья 88 «Камеральная налоговая проверка»»."""
+    parts: list[str] = []
+    for node in path:
+        if node.kind == "part":
+            parts.append(f"{act_short}, часть {node.number}")
+        elif node.kind in ("section", "subsection", "chapter", "article"):
+            head = f"{KIND_RU[node.kind]} {node.number}"
+            parts.append(f"{head} «{node.title}»" if node.title else head)
+    return ", ".join(parts)
+
+
+def is_chunk(node: Unit) -> bool:
+    """Единица поиска: пункт/подпункт; статья — только если у неё нет пунктов."""
+    if node.kind in ("point", "subpoint"):
+        return True
+    if node.kind == "article":
+        return not any(c.kind == "point" for c in node.children)
+    return False
+
+
+def unit_record(node: Unit, act_code: str, path: list[Unit] | None = None) -> dict:
     return {
         "unit_id": node.unit_id,
         "act": act_code,
@@ -320,8 +395,11 @@ def unit_record(node: Unit, act_code: str) -> dict:
         "number": node.number,
         "title": node.title,
         "label": node.label,
+        "context": build_context(path) if path else "",
+        "is_chunk": is_chunk(node),
         "text": node.text,
         "text_hash": node.text_hash(),
+        "full_text": full_text(node) if node.kind in PARAGRAPH_HOSTS else node.text,
         "paragraphs": list(node.paragraphs),
         "edit_note": node.edit_note,
         "duplicate_of": node.duplicate_of,
@@ -352,7 +430,7 @@ def flatten(root: Unit, act_code: str) -> list[dict]:
             node.unit_id = f"{canonical}@{suffix}"
             node.duplicate_of = canonical
         seen.add(node.unit_id)
-        records.append(unit_record(node, act_code))
+        records.append(unit_record(node, act_code, path))
         for child in node.children:
             rec(child, path)
 
