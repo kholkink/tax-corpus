@@ -1,0 +1,31 @@
+{
+  "act": {
+    "code": "nk2",
+    "kind": "code",
+    "official_number": "117-ФЗ",
+    "adoption_date": "2000-08-05",
+    "title": "Налоговый кодекс Российской Федерации (часть вторая)"
+  },
+  "source_url": "https://pravo-search.minjust.ru/bigs/ (ГАС Законодательство России, ред. 376 от 04.08.2026)",
+  "source_path": "data/processed/nk2_red376.txt",
+  "source_format": "txt",
+  "source_sha256": "sha256:3bcecb276b970bf3f45341e5ba33c53c1b1a58b5dea5f4dc77496a62e41093ad",
+  "retrieved_at": "2026-09-09T14:08:47.203090+00:00",
+  "valid_from": "2026-08-04",
+  "stats": {
+    "paragraphs_total": 23444,
+    "noise_lines_removed": 165,
+    "units_by_kind": {
+      "section": 5,
+      "chapter": 24,
+      "article": 540,
+      "point": 4069,
+      "subpoint": 4062
+    },
+    "edition_notes": 6504,
+    "titles_from_next_line": 1,
+    "stray_subpoints": 310,
+    "detokenized": 1133,
+    "duplicate_suffixes": 1541
+  }
+}

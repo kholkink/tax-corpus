@@ -1,0 +1,341 @@
+"""CLI корпуса: parse -> load -> ingest.
+
+    python -m taxcorpus parse  --input data/raw/nk1.txt --act-code nk1
+    python -m taxcorpus load   --data-dir data/processed/nk1
+    python -m taxcorpus ingest --input data/raw/nk1.txt --act-code nk1
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import sys
+from dataclasses import asdict
+from datetime import date, datetime, timezone
+from pathlib import Path
+
+from .parser import parse_document
+from .validator import validate
+
+
+def _sha256(data: bytes) -> str:
+    return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+def _write_jsonl(path: Path, rows: list[dict]) -> None:
+    with path.open("w", encoding="utf-8") as fh:
+        for row in rows:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    rows = []
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+    return rows
+
+
+def _other_acts_units(out_dir: Path, act_code: str) -> list[dict]:
+    """Единицы ранее разобранных актов (<код>_units.jsonl в out_dir), кроме текущего:
+    нужны резолверу для ссылок между частями кодекса («глава 25» из ч.1 живёт в ч.2)."""
+    extra: list[dict] = []
+    for path in sorted(out_dir.glob("*_units.jsonl")):
+        if path.name != f"{act_code}_units.jsonl":
+            extra.extend(_read_jsonl(path))
+    return extra
+
+
+def _extract_references(records: list[dict], extra_records: list[dict] = ()) -> list[dict]:
+    """Явные ссылки (регэкспы) + резолв в канонические unit_id по индексу всего корпуса."""
+    from .references import extract_references
+    from .resolver import resolve_all
+
+    result: list[dict] = []
+    for record in records:
+        result.extend(extract_references(record["unit_id"], record["text"]))
+    return resolve_all(records, result, index_records=[*records, *extra_records])
+
+
+def cmd_parse(args: argparse.Namespace) -> int:
+    input_path = Path(args.input)
+    raw_bytes = input_path.read_bytes()
+    raw = raw_bytes.decode("utf-8")
+
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    root, records, stats = parse_document(raw, args.act_code)
+    report = validate(records)
+    references = _extract_references(records, _other_acts_units(out_dir, args.act_code))
+
+    if args.valid_from:
+        valid_from = args.valid_from
+    else:
+        valid_from = date.today().isoformat()
+        print(f"[warn] --valid-from не задан: интервал действия редакции начнётся "
+              f"с сегодняшней даты ({valid_from}); запросы get_unit на более ранние даты "
+              "вернут пустоту. Укажите дату редакции из шапки банка.", file=sys.stderr)
+    report_dir = Path(args.report_dir)
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    units_path = out_dir / f"{args.act_code}_units.jsonl"
+    refs_path = out_dir / f"{args.act_code}_references.jsonl"
+    amendments_path = out_dir / f"{args.act_code}_amendments.jsonl"
+    meta_path = out_dir / f"{args.act_code}_meta.json"
+    report_path = report_dir / f"{args.act_code}_validation.md"
+
+    _write_jsonl(units_path, records)
+    _write_jsonl(refs_path, references)
+
+    from .amendments import amendments_from_records
+    amendments = amendments_from_records(records)
+    _write_jsonl(amendments_path, amendments)
+
+    meta = {
+        "act": {
+            "code": args.act_code,
+            "kind": "code",
+            "official_number": args.official_number,
+            "adoption_date": args.adoption_date,
+            "title": args.act_title,
+        },
+        "source_url": args.source_url,
+        "source_path": str(input_path),
+        "source_format": input_path.suffix.lstrip(".") or "txt",
+        "source_sha256": _sha256(raw_bytes),
+        "retrieved_at": datetime.now(timezone.utc).isoformat(),
+        "valid_from": valid_from,
+        "stats": asdict(stats),
+    }
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    report_path.write_text(
+        report.render_markdown(f"Валидация {args.act_code}: {args.act_title}"),
+        encoding="utf-8",
+    )
+    report_json_path = report_dir / f"{args.act_code}_validation.json"
+    report_json_path.write_text(json.dumps({
+        "errors": [asdict(i) for i in report.errors],
+        "warnings": [asdict(i) for i in report.warnings],
+        "infos": [asdict(i) for i in report.infos],
+    }, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    counts = ", ".join(f"{k}={v}" for k, v in sorted(asdict(stats)["units_by_kind"].items()))
+    print(f"единиц: {len(records)} ({counts or 'нет'})")
+    print(f"ссылок: {len(references)} (резолв: "
+          f"{sum(1 for r in references if r.get('status') == 'resolved')} resolved, "
+          f"{sum(1 for r in references if r.get('status') == 'partial')} partial, "
+          f"{sum(1 for r in references if r.get('status') == 'unresolved')} unresolved, "
+          f"{sum(1 for r in references if r.get('status') == 'external')} external)")
+    print(f"правок из пометок редакции: {len(amendments)}")
+    print(f"валидация: {len(report.errors)} ошибок, {len(report.warnings)} предупреждений")
+    print(f"файлы: {units_path}, {refs_path}, {amendments_path}, {meta_path}")
+    print(f"отчёт: {report_path}")
+
+    if report.has_errors and not args.allow_errors:
+        print("есть ошибки валидации — загрузку в БД стоит отложить; "
+              "для принудительной загрузки: --allow-errors", file=sys.stderr)
+        return 2
+    return 0
+
+
+def cmd_load(args: argparse.Namespace) -> int:
+    from .db import connect, ensure_schema, load_corpus
+
+    data_dir = Path(args.data_dir)
+    act_code = args.act_code
+    meta = json.loads((data_dir / f"{act_code}_meta.json").read_text(encoding="utf-8"))
+    units = _read_jsonl(data_dir / f"{act_code}_units.jsonl")
+    refs_path = data_dir / f"{act_code}_references.jsonl"
+    references = _read_jsonl(refs_path) if refs_path.exists() else []
+    amendments_path = data_dir / f"{act_code}_amendments.jsonl"
+    amendments = _read_jsonl(amendments_path) if amendments_path.exists() else []
+
+    report_json_path = Path(args.report_dir) / f"{act_code}_validation.json"
+    issues: list[dict] = []
+    if report_json_path.exists():
+        issues = json.loads(report_json_path.read_text(encoding="utf-8"))
+
+    conn = connect(args.db_url)
+    try:
+        ensure_schema(conn, args.schema)
+        result = load_corpus(conn, meta, units, references, stats=meta.get("stats"),
+                             issues=issues, amendments=amendments)
+    finally:
+        conn.close()
+
+    print(f"загружено: act_id={result['act_id']}, edition_id={result['edition_id']}, "
+          f"units={result['units']}, references={result['references']}, "
+          f"amendments={result.get('amendments', 0)}")
+    return 0
+
+
+def cmd_unit(args: argparse.Namespace) -> int:
+    """Норма на дату: get_unit(unit_id, as_of_date) — принцип «время — первичная ось»."""
+    from .db import connect, get_unit, list_amendments
+
+    conn = connect(args.db_url)
+    try:
+        record = get_unit(conn, args.id, args.as_of)
+        if record is None:
+            print(f"единица {args.id} не найдена или не действовала на {args.as_of}",
+                  file=sys.stderr)
+            return 1
+        print(f"{record['unit_id']} — {record['label']}")
+        if record["title"]:
+            print(record["title"])
+        print(f"интервал действия: {record['valid_from']} … {record['valid_to'] or 'наст. время'}")
+        if record["edit_note"]:
+            print(f"пометка: {record['edit_note']}")
+        print()
+        print(record["text"])
+        for row in list_amendments(conn, args.id):
+            print(f"\n[правка] {row['operation']}: ФЗ № {row['amending_act_number']} "
+                  f"от {row['amending_act_date']}")
+    finally:
+        conn.close()
+    return 0
+
+
+def cmd_ingest(args: argparse.Namespace) -> int:
+    rc = cmd_parse(args)
+    if rc != 0 and not args.allow_errors:
+        return rc
+    return cmd_load(args)
+
+
+def cmd_convert(args: argparse.Namespace) -> int:
+    from .ingest import convert
+
+    input_path = Path(args.input)
+    fmt = (args.format or input_path.suffix.lstrip(".")).lower()
+    raw = input_path.read_bytes().decode("utf-8-sig")
+    text = convert(raw, fmt)
+    out = Path(args.output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    print(f"формат: {fmt}; абзацев: {text.count(chr(10) * 2) + 1}; записано: {out}")
+    return 0
+
+
+def cmd_search(args: argparse.Namespace) -> int:
+    """Полнотекстовый поиск по нормам (BM25-плечо гибридного поиска, слой 4)."""
+    from .db import connect, search_units
+
+    conn = connect(args.db_url)
+    try:
+        rows = search_units(conn, args.query, args.as_of, limit=args.limit, kind=args.kind)
+    finally:
+        conn.close()
+    if not rows:
+        print("ничего не найдено")
+        return 1
+    for i, r in enumerate(rows, 1):
+        print(f"{i}. [{r['rank']:.3f}] {r['unit_id']} — {r['label']}")
+        print(f"   {r['snippet']}")
+        print()
+    return 0
+
+
+def cmd_diff(args: argparse.Namespace) -> int:
+    """Что изменилось: история правок единицы за период (list_amendments)."""
+    from .db import connect, get_unit, list_amendments
+
+    conn = connect(args.db_url)
+    try:
+        record = get_unit(conn, args.id, args.as_of)
+        if record is None:
+            print(f"единица {args.id} не найдена или не действовала на {args.as_of}",
+                  file=sys.stderr)
+            return 1
+        rows = list_amendments(conn, args.id, since=args.since)
+    finally:
+        conn.close()
+    print(f"{record['unit_id']} — {record['label']} (текст на {args.as_of})")
+    if not rows:
+        print(f"правок с {args.since} не зафиксировано")
+        return 0
+    print(f"правок с {args.since}: {len(rows)}")
+    for row in rows:
+        date = row["amending_act_date"] or "дата не распознана"
+        print(f"  {date}  {row['operation']:12s} ФЗ № {row['amending_act_number']}")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="taxcorpus", description=__doc__)
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--input", required=True, help="сырой текст кодекса (utf-8)")
+    common.add_argument("--act-code", default="nk1", help="канонический код акта")
+    common.add_argument("--act-title",
+                        default="Налоговый кодекс Российской Федерации (часть первая)")
+    common.add_argument("--official-number", default="146-ФЗ")
+    common.add_argument("--adoption-date", default="1998-07-31")
+    common.add_argument("--source-url", default=None, help="URL первоисточника")
+    common.add_argument("--valid-from", default=None,
+                        help="дата начала действия редакции (YYYY-MM-DD) из шапки банка; "
+                             "без неё — сегодня, с предупреждением")
+    common.add_argument("--allow-errors", action="store_true")
+
+    p_parse = sub.add_parser("parse", parents=[common], help="разобрать текст и вывести JSONL")
+    p_parse.add_argument("--out-dir", default="data/processed")
+    p_parse.add_argument("--report-dir", default="reports")
+    p_parse.set_defaults(func=cmd_parse)
+
+    p_load = sub.add_parser("load", help="загрузить JSONL в PostgreSQL")
+    p_load.add_argument("--data-dir", default="data/processed")
+    p_load.add_argument("--act-code", default="nk1")
+    p_load.add_argument("--db-url", default=None)
+    p_load.add_argument("--schema", default=None, help="путь к sql/schema.sql")
+    p_load.add_argument("--report-dir", default="reports")
+    p_load.set_defaults(func=cmd_load)
+
+    p_ingest = sub.add_parser("ingest", parents=[common], help="parse + load за один проход")
+    p_ingest.add_argument("--out-dir", default="data/processed")
+    p_ingest.add_argument("--report-dir", default="reports")
+    p_ingest.add_argument("--db-url", default=None)
+    p_ingest.add_argument("--schema", default=None)
+    p_ingest.set_defaults(func=cmd_ingest)
+
+    p_convert = sub.add_parser("convert", help="сырой источник -> нормализованный текст")
+    p_convert.add_argument("--input", required=True)
+    p_convert.add_argument("--output", required=True)
+    p_convert.add_argument("--format", default=None, help="html|txt; по умолчанию из расширения")
+    p_convert.set_defaults(func=cmd_convert)
+
+    p_unit = sub.add_parser("unit", help="текст единицы на дату (get_unit)")
+    p_unit.add_argument("--id", required=True, help="канонический unit_id")
+    p_unit.add_argument("--as-of", default=date.today().isoformat(), help="дата (YYYY-MM-DD)")
+    p_unit.add_argument("--db-url", default=None)
+    p_unit.set_defaults(func=cmd_unit)
+
+    p_search = sub.add_parser("search", help="полнотекстовый поиск по нормам (BM25)")
+    p_search.add_argument("--query", required=True, help='например: "камеральная проверка"')
+    p_search.add_argument("--as-of", default=date.today().isoformat())
+    p_search.add_argument("--limit", type=int, default=10)
+    p_search.add_argument("--kind", default=None, help="фильтр по виду единицы: article|point|...")
+    p_search.add_argument("--db-url", default=None)
+    p_search.set_defaults(func=cmd_search)
+
+    p_diff = sub.add_parser("diff", help="история правок единицы за период")
+    p_diff.add_argument("--id", required=True)
+    p_diff.add_argument("--since", required=True, help="начало периода (YYYY-MM-DD)")
+    p_diff.add_argument("--as-of", default=date.today().isoformat())
+    p_diff.add_argument("--db-url", default=None)
+    p_diff.set_defaults(func=cmd_diff)
+
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

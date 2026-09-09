@@ -1,0 +1,303 @@
+"""Загрузка корпуса в PostgreSQL.
+
+Идемпотентность: перезагрузка одного акта целиком (units + texts + references
+акта стираются и вставляются заново в одной транзакции). Тексты единиц не
+редактируются на месте — при консолидации редакций появляются новые строки
+unit_text с новыми интервалами (см. архитектурный план, §4.2).
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from datetime import date
+from pathlib import Path
+
+import psycopg
+from psycopg.rows import dict_row
+from psycopg.types.json import Json
+
+from .amendments import repeal_dates
+
+DEFAULT_DB_URL = "postgresql://postgres@localhost:5432/taxcorpus"
+
+
+def connect(db_url: str | None = None) -> psycopg.Connection:
+    url = db_url or os.environ.get("TAXCORPUS_DB") or DEFAULT_DB_URL
+    return psycopg.connect(url, row_factory=dict_row)
+
+
+def ensure_schema(conn: psycopg.Connection, schema_path: str | Path | None = None) -> None:
+    path = Path(schema_path) if schema_path else \
+        Path(__file__).resolve().parents[2] / "sql" / "schema.sql"
+    with conn.transaction():
+        conn.execute(path.read_text(encoding="utf-8"))
+
+
+def load_corpus(conn: psycopg.Connection, meta: dict, units: list[dict],
+                references: list[dict], stats: dict | None = None,
+                issues: list[dict] | None = None,
+                amendments: list[dict] | None = None) -> dict:
+    """Полная (пере)загрузка одного акта. meta — из CLI; units/references/amendments — записи парсера."""
+    act = meta["act"]
+    act_code = act["code"]
+    valid_from = date.fromisoformat(meta.get("valid_from")) if meta.get("valid_from") else date.today()
+    stats = stats or {}
+    issues = issues or []
+    amendments = amendments or []
+
+    with conn.transaction():
+        cur = conn.execute(
+            """
+            INSERT INTO act (act_code, kind, official_number, adoption_date, title,
+                             source_url, retrieved_at, source_sha256)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (act_code) DO UPDATE SET
+                kind = EXCLUDED.kind,
+                official_number = EXCLUDED.official_number,
+                adoption_date = EXCLUDED.adoption_date,
+                title = EXCLUDED.title,
+                source_url = EXCLUDED.source_url,
+                retrieved_at = EXCLUDED.retrieved_at,
+                source_sha256 = EXCLUDED.source_sha256
+            RETURNING act_id
+            """,
+            (act_code, act.get("kind", "code"), act.get("official_number"),
+             act.get("adoption_date"), act["title"], meta.get("source_url"),
+             meta.get("retrieved_at"), meta.get("source_sha256")),
+        )
+        act_id = cur.fetchone()["act_id"]
+
+        if meta.get("source_url"):
+            # один и тот же сырой документ (url + sha256) не дублируется при перезагрузке
+            conn.execute(
+                """
+                INSERT INTO raw_document (url, retrieved_at, sha256, format, path)
+                SELECT %s, %s, %s, %s, %s
+                WHERE NOT EXISTS (SELECT 1 FROM raw_document WHERE url = %s AND sha256 = %s)
+                """,
+                (meta["source_url"], meta.get("retrieved_at"), meta.get("source_sha256") or "",
+                 meta.get("source_format", "txt"), meta.get("source_path", ""),
+                 meta["source_url"], meta.get("source_sha256") or ""),
+            )
+
+        # полная перезагрузка единиц акта: сначала все зависимые таблицы
+        # (reference, amendment, unit_text), затем unit и edition
+        conn.execute(
+            """
+            DELETE FROM reference WHERE from_unit_id IN
+                (SELECT unit_id FROM unit WHERE act_id = %s)
+            """,
+            (act_id,),
+        )
+        conn.execute(
+            """
+            DELETE FROM amendment WHERE target_unit_id IN
+                (SELECT unit_id FROM unit WHERE act_id = %s)
+            """,
+            (act_id,),
+        )
+        conn.execute(
+            """
+            DELETE FROM unit_text WHERE unit_id IN
+                (SELECT unit_id FROM unit WHERE act_id = %s)
+            """,
+            (act_id,),
+        )
+        conn.execute("DELETE FROM unit WHERE act_id = %s", (act_id,))
+        conn.execute("DELETE FROM edition WHERE act_id = %s", (act_id,))
+
+        cur = conn.execute(
+            """
+            INSERT INTO edition (act_id, valid_from, valid_to, notes)
+            VALUES (%s, %s, NULL, %s)
+            RETURNING edition_id
+            """,
+            (act_id, valid_from, meta.get("edition_notes", "текущая редакция на дату выгрузки")),
+        )
+        edition_id = cur.fetchone()["edition_id"]
+
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO unit (unit_id, act_id, parent_unit_id, kind, number,
+                                  label, title, duplicate_of)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                [
+                    (r["unit_id"], act_id, r["parent_unit_id"], r["kind"],
+                     r["number"], r["label"], r["title"], r.get("duplicate_of"))
+                    for r in units
+                ],
+            )
+
+            provenance = {
+                "source_url": meta.get("source_url"),
+                "retrieved_at": meta.get("retrieved_at"),
+                "source_sha256": meta.get("source_sha256"),
+            }
+            # отменённые единицы («<Утратил силу с 1 января 2023 г.: …>»): интервал
+            # действия закрывается датой утраты силы, начало неизвестно (NULL);
+            # без даты в пометке — закрыт датой редакции, чтобы не считаться действующей
+            repealed = repeal_dates(amendments)
+
+            def interval(unit_id: str) -> tuple[date | None, date | None]:
+                if unit_id in repealed:
+                    return None, (date.fromisoformat(repealed[unit_id])
+                                  if repealed[unit_id] else valid_from)
+                return valid_from, None
+
+            cur.executemany(
+                """
+                INSERT INTO unit_text (unit_id, edition_id, valid_from, valid_to,
+                                       text, text_hash, edit_note, provenance)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                [
+                    (r["unit_id"], edition_id, *interval(r["unit_id"]), r["text"],
+                     r["text_hash"], r["edit_note"], Json(provenance))
+                    for r in units
+                ],
+            )
+
+            cur.executemany(
+                """
+                INSERT INTO reference (from_unit_id, kind, raw_citation, target,
+                                       to_unit_id, status, resolved_depth,
+                                       extracted_by, confidence)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                [
+                    (r["from_unit_id"], r["kind"], r["raw_citation"], Json(r["target"]),
+                     r.get("to_unit_id"), r.get("status"), r.get("resolved_depth"),
+                     r.get("extracted_by", "regex"), r.get("confidence", 1.0))
+                    for r in references
+                ],
+            )
+
+            if amendments:
+                cur.executemany(
+                    """
+                    INSERT INTO amendment (target_unit_id, operation,
+                                           amending_act_number, amending_act_date,
+                                           effective_date, raw_note, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    [
+                        (a["target_unit_id"], a["operation"], a["amending_act_number"],
+                         a["amending_act_date"], a.get("effective_date"), a["raw_note"],
+                         a.get("status", "auto_extracted"))
+                        for a in amendments
+                    ],
+                )
+
+        conn.execute(
+            "INSERT INTO parse_run (act_code, stats, issues) VALUES (%s, %s, %s)",
+            (act_code, Json(stats), Json(issues)),
+        )
+
+    return {"act_id": act_id, "edition_id": edition_id, "units": len(units),
+            "references": len(references), "amendments": len(amendments)}
+
+
+def get_unit(conn, unit_id: str, as_of_date: str) -> dict | None:
+    """Норма на дату: текст единицы с учётом интервала действия редакции.
+
+    Интервал проверяется по valid_from/valid_to текстовой строки; при наличии
+    нескольких интервалов выбирается действующий с последней valid_from.
+    """
+    row = conn.execute(
+        """
+        SELECT u.unit_id, u.kind, u.number, u.label, u.title, u.duplicate_of,
+               t.valid_from, t.valid_to, t.text, t.text_hash, t.edit_note,
+               e.edition_id
+        FROM unit u
+        JOIN unit_text t ON t.unit_id = u.unit_id
+        LEFT JOIN edition e ON e.edition_id = t.edition_id
+        WHERE u.unit_id = %s
+          AND (t.valid_from IS NULL OR t.valid_from <= %s)
+          AND (t.valid_to IS NULL OR t.valid_to > %s)
+        ORDER BY t.valid_from DESC NULLS LAST
+        LIMIT 1
+        """,
+        (unit_id, as_of_date, as_of_date),
+    ).fetchone()
+    return row
+
+
+def list_amendments(conn, unit_id: str, since: str | None = None) -> list[dict]:
+    """История правок единицы (из пометок редакции); since — фильтр по дате закона."""
+    return conn.execute(
+        """
+        SELECT operation, amending_act_number, amending_act_date, effective_date, raw_note
+        FROM amendment
+        WHERE target_unit_id = %s
+          AND (%s::date IS NULL OR amending_act_date >= %s::date)
+        ORDER BY amending_act_date NULLS LAST, amendment_id
+        """,
+        (unit_id, since, since),
+    ).fetchall()
+
+
+# аббревиатуры, которых почти нет в тексте кодекса (он пишет полные формы):
+# запрос юриста расширяется синонимами до tsquery-веток через OR
+ABBREVIATIONS: dict[str, str] = {
+    "ндс": "налог на добавленную стоимость",
+    "ндфл": "налог на доходы физических лиц",
+    "енп": "единый налоговый платеж",
+    "енс": "единый налоговый счет",
+    "усн": "упрощенная система налогообложения",
+    "псн": "патентная система налогообложения",
+    "кгн": "консолидированная группа налогоплательщиков",
+    "енвд": "единый налог на вмененный доход",
+    "есхн": "единый сельскохозяйственный налог",
+    "тцо": "трансфертное ценообразование",
+}
+
+
+def expand_query(query: str) -> list[str]:
+    """Запрос -> полные формы найденных аббревиатур (для OR-веток поиска)."""
+    expansions = []
+    for word in re.findall(r"\w+", query.lower()):
+        if word in ABBREVIATIONS:
+            expansions.append(ABBREVIATIONS[word])
+    return expansions
+
+
+def search_units(conn, query: str, as_of_date: str, limit: int = 10,
+                 kind: str | None = None) -> list[dict]:
+    """Полнотекстовый поиск (лексическое плечо гибридного поиска, слой 4; ts_rank, не BM25).
+
+    websearch_to_tsquery понимает естественный синтаксис («камеральная OR
+    выездная проверка»); индекс всегда фильтруется по as_of_date. Аббревиатуры
+    (НДС, ЕНС, ...) расширяются полными формами как OR-ветки — кодекс их
+    пишет словами.
+    """
+    expansions = expand_query(query)
+    return conn.execute(
+        """
+        SELECT u.unit_id, u.kind, u.label, u.title,
+               GREATEST(
+                   ts_rank(t.search_vector, q_main),
+                   COALESCE((SELECT max(ts_rank(t.search_vector,
+                                   phraseto_tsquery('russian', e.phrase)))
+                             FROM unnest(%s::text[]) AS e(phrase)), 0)
+               ) AS rank,
+               ts_headline('russian', t.text, q_main,
+                           'MaxWords=40, MinWords=15, StartSel=«, StopSel=», MaxFragments=2')
+                   AS snippet
+        FROM unit_text t
+        JOIN unit u ON u.unit_id = t.unit_id,
+             websearch_to_tsquery('russian', %s) q_main
+        WHERE (t.search_vector @@ q_main
+            OR EXISTS (SELECT 1 FROM unnest(%s::text[]) AS e(phrase)
+                       WHERE t.search_vector @@ phraseto_tsquery('russian', e.phrase)))
+          AND (t.valid_from IS NULL OR t.valid_from <= %s)
+          AND (t.valid_to IS NULL OR t.valid_to > %s)
+          AND (%s::text IS NULL OR u.kind = %s::text)
+        ORDER BY rank DESC
+        LIMIT %s
+        """,
+        (expansions, query, expansions,
+         as_of_date, as_of_date, kind, kind, limit),
+    ).fetchall()

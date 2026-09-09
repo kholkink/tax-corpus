@@ -1,0 +1,31 @@
+{
+  "act": {
+    "code": "nk1",
+    "kind": "code",
+    "official_number": "146-ФЗ",
+    "adoption_date": "1998-07-31",
+    "title": "Налоговый кодекс Российской Федерации (часть первая)"
+  },
+  "source_url": "https://pravo-search.minjust.ru/bigs/ (ГАС Законодательство России, ред. 199 от 04.08.2026)",
+  "source_path": "data/processed/nk1_red199.txt",
+  "source_format": "txt",
+  "source_sha256": "sha256:9a33a8e5a76dc1b8349a5a1f523ea3528ae858c73020b9787bdcb088509316ed",
+  "retrieved_at": "2026-09-09T14:08:48.170855+00:00",
+  "valid_from": "2026-08-04",
+  "stats": {
+    "paragraphs_total": 6614,
+    "noise_lines_removed": 0,
+    "units_by_kind": {
+      "section": 10,
+      "chapter": 39,
+      "article": 274,
+      "point": 1522,
+      "subpoint": 1098
+    },
+    "edition_notes": 1825,
+    "titles_from_next_line": 1,
+    "stray_subpoints": 39,
+    "detokenized": 366,
+    "duplicate_suffixes": 13
+  }
+}

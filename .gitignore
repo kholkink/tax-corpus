@@ -1,0 +1,21 @@
+# Python
+.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+
+# Локальный PostgreSQL (бинарники + данные)
+.pg/
+
+# Сырые и большие файлы данных (не для VCS; provenance хранится в БД)
+data/raw/minjust_js/
+data/raw/*.json
+data/raw/*.html
+data/raw/*.txt
+data/raw/cookies.txt
+
+# Производные данные парсера (десятки МБ, регенерируются командой parse)
+data/processed/*.jsonl
+data/processed/*.txt
+data/raw/sources/
+*:Zone.Identifier
