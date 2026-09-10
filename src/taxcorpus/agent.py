@@ -16,7 +16,7 @@ import json
 from dataclasses import dataclass, field
 from datetime import date
 
-from .citations import VerificationReport
+from .citations import CitationCheck, VerificationReport
 from .deadlines import ProductionCalendar
 from .tools import TOOL_DEFINITIONS, Corpus, execute_tool
 
@@ -29,7 +29,7 @@ SYSTEM_PROMPT = """Ты — ассистент налогового юриста
 2. Все нормы берутся на дату {as_of}. Если в вопросе дата не названа, считай ею {as_of} и скажи об этом явно в ответе.
 3. Числа (ставки, сроки, штрафы) — сначала get_parameter; если параметра нет, процитируй текст единицы из get_unit. Сроки считай только compute_deadline.
 4. Если релевантных норм не найдено или уверенность низкая — напиши «В корпусе нет достаточных оснований для ответа» и объясни, чего не хватает. Не додумывай.
-5. Не давай ссылок на письма Минфина/ФНС и судебную практику: их пока нет в корпусе.
+5. Письма Минфина/ФНС, постановления Пленума и обзоры цитируй только те, что вернул get_interpretations (номер и дата — из результата), с пометкой, что это ненормативная позиция, и с датой: письмо могло относиться к прежней редакции нормы. Если инструмент ничего не вернул — так и напиши.
 
 Формат ответа (заголовки обязательны):
 **Вывод** — прямой ответ в 1–3 предложениях.
@@ -143,6 +143,16 @@ class TaxAgent:
             messages.append({"role": "user", "content": results})
         return response
 
+    def _verify(self, answer: str, as_of: str) -> VerificationReport:
+        """Нормы — по корпусу; письма/пленумы — по реестру документов (нет в реестре — MISS)."""
+        report = self.corpus.verifier().verify(answer, as_of)
+        for d in self.corpus.interpretations().verify_doc_citations(answer):
+            report.checks.append(CitationCheck(
+                d["raw"], d.get("doc_id"), "ok" if d["status"] == "ok" else "unresolved",
+                d["status"], "document",
+                None if d["status"] == "ok" else "документа нет в реестре разъяснений"))
+        return report
+
     def ask(self, question: str, as_of: str | date | None = None) -> AgentResult:
         as_of = (as_of or date.today())
         as_of = as_of.isoformat() if isinstance(as_of, date) else as_of
@@ -157,7 +167,7 @@ class TaxAgent:
             return AgentResult(question, as_of, "Модель отказалась отвечать на этот запрос.",
                                report, calls, refused=True, stop_reason="refusal", usage=usage)
         answer = _text_of(response)
-        report = self.corpus.verifier().verify(answer, as_of)
+        report = self._verify(answer, as_of)
         reworked = False
         if not report.ok:
             problems = "\n".join(
@@ -168,7 +178,7 @@ class TaxAgent:
             response = self._run_loop(system, messages, calls, as_of, usage)
             if response.stop_reason != "refusal":
                 answer = _text_of(response)
-                report = self.corpus.verifier().verify(answer, as_of)
+                report = self._verify(answer, as_of)
             reworked = True
         return AgentResult(question, as_of, answer, report, calls, reworked=reworked,
                            refused=response.stop_reason == "refusal",

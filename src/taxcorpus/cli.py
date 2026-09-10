@@ -388,6 +388,45 @@ def cmd_ask(args: argparse.Namespace) -> int:
     return 0 if result.verification.ok and not result.refused else 2
 
 
+def cmd_load_docs(args: argparse.Namespace) -> int:
+    """Реестр разъяснений (JSONL) -> PostgreSQL: документы + рёбра interprets."""
+    from .db import connect, ensure_schema, load_documents_db
+    from .interpretations import link_document, load_documents
+    from .resolver import UnitIndex
+
+    docs = load_documents(args.input)
+    records = []
+    for path in sorted(Path(args.data_dir).glob("*_units.jsonl")):
+        records.extend(_read_jsonl(path))
+    index = UnitIndex(records)
+    edges = [e for d in docs for e in link_document(d, index)]
+    conn = connect(args.db_url)
+    try:
+        ensure_schema(conn, args.schema)
+        n = load_documents_db(conn, docs, edges)
+    finally:
+        conn.close()
+    print(f"документов: {n}, рёбер interprets: {len(edges)}")
+    return 0
+
+
+def cmd_interpretations(args: argparse.Namespace) -> int:
+    """Разъяснения по единице на дату (офлайн: реестр JSONL + корпус)."""
+    from .tools import LocalCorpus
+
+    corpus = LocalCorpus(args.data_dir, parameters_path=None, interpretations_dir=args.input)
+    rows = corpus.get_interpretations(args.id, args.as_of, limit=args.limit)
+    if not rows:
+        print("разъяснений не найдено")
+        return 1
+    for r in rows:
+        flag = " [обязательно для налоговых органов]" if r["mandatory"] else ""
+        print(f"{r['kind']} {r['agency']} от {r['date']} № {r['number']}{flag}")
+        print(f"   {r['title']}")
+        print(f"   цитирует: {', '.join(r['cites'])}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="taxcorpus", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -494,6 +533,21 @@ def build_parser() -> argparse.ArgumentParser:
                        help="не использовать серверный фолбэк при отказе модели")
     p_ask.add_argument("--log", default=None, help="куда записать JSON-журнал запроса")
     p_ask.set_defaults(func=cmd_ask)
+
+    p_docs = sub.add_parser("load-docs", help="реестр разъяснений (JSONL) -> PostgreSQL")
+    p_docs.add_argument("--input", default="data/interpretations")
+    p_docs.add_argument("--data-dir", default="data/processed")
+    p_docs.add_argument("--db-url", default=None)
+    p_docs.add_argument("--schema", default=None)
+    p_docs.set_defaults(func=cmd_load_docs)
+
+    p_int = sub.add_parser("interpretations", help="разъяснения по единице на дату (офлайн)")
+    p_int.add_argument("--id", required=True)
+    p_int.add_argument("--as-of", default=date.today().isoformat())
+    p_int.add_argument("--limit", type=int, default=10)
+    p_int.add_argument("--input", default="data/interpretations")
+    p_int.add_argument("--data-dir", default="data/processed")
+    p_int.set_defaults(func=cmd_interpretations)
 
     return parser
 

@@ -19,6 +19,7 @@ from typing import Any, Protocol
 from .amendments import amendments_from_records, repeal_dates
 from .citations import CitationVerifier
 from .deadlines import ProductionCalendar, compute_deadline
+from .interpretations import InterpretationIndex, load_documents
 from .resolver import UnitIndex, resolve_citation
 from .terms import extract_terms
 
@@ -30,7 +31,9 @@ class Corpus(Protocol):
     def list_amendments(self, unit_id: str, since: str | None) -> list[dict]: ...
     def get_parameter(self, name: str, as_of: str) -> dict | None: ...
     def find_terms(self, query: str, as_of: str) -> list[dict]: ...
+    def get_interpretations(self, unit_id: str, as_of: str, limit: int) -> list[dict]: ...
     def verifier(self) -> CitationVerifier: ...
+    def interpretations(self) -> InterpretationIndex: ...
 
 
 # --- офлайн-бэкенд -----------------------------------------------------------------
@@ -43,7 +46,8 @@ class LocalCorpus:
     """Корпус из data/processed/*_units.jsonl (+ amendments, meta, сид параметров)."""
 
     def __init__(self, data_dir: str | Path = "data/processed",
-                 parameters_path: str | Path | None = "data/parameters/parameters_v0.json"):
+                 parameters_path: str | Path | None = "data/parameters/parameters_v0.json",
+                 interpretations_dir: str | Path | None = "data/interpretations"):
         self.data_dir = Path(data_dir)
         self.records: list[dict] = []
         self.editions: dict[str, str] = {}
@@ -63,10 +67,15 @@ class LocalCorpus:
         if parameters_path and Path(parameters_path).exists():
             self.parameters = json.loads(Path(parameters_path).read_text(encoding="utf-8"))["parameters"]
         self.terms = extract_terms(self.records)
+        docs = []
+        if interpretations_dir and Path(interpretations_dir).is_dir():
+            docs = load_documents(interpretations_dir)
+        self._interpretations = InterpretationIndex(docs, self.index)
 
     @classmethod
     def from_records(cls, records: list[dict], editions: dict[str, str] | None = None,
-                     parameters: list[dict] | None = None) -> "LocalCorpus":
+                     parameters: list[dict] | None = None,
+                     documents: list | None = None) -> "LocalCorpus":
         self = cls.__new__(cls)
         self.data_dir = Path(".")
         self.records = records
@@ -78,10 +87,17 @@ class LocalCorpus:
         self._verifier = CitationVerifier(records, self.editions)
         self.parameters = parameters or []
         self.terms = extract_terms(records)
+        self._interpretations = InterpretationIndex(documents or [], self.index)
         return self
 
     def verifier(self) -> CitationVerifier:
         return self._verifier
+
+    def interpretations(self) -> InterpretationIndex:
+        return self._interpretations
+
+    def get_interpretations(self, unit_id: str, as_of: str, limit: int = 10) -> list[dict]:
+        return self._interpretations.get_interpretations(unit_id, as_of, limit)
 
     def _interval(self, unit_id: str) -> tuple[str | None, str | None]:
         return self._verifier.interval(unit_id)
@@ -177,6 +193,12 @@ class DbCorpus:
     def find_terms(self, query: str, as_of: str) -> list[dict]:
         return self.db.find_terms(self.conn, query, as_of)
 
+    def interpretations(self) -> InterpretationIndex:
+        return self._local.interpretations()
+
+    def get_interpretations(self, unit_id: str, as_of: str, limit: int = 10) -> list[dict]:
+        return self.db.get_interpretations(self.conn, unit_id, as_of, limit)
+
 
 # --- описания инструментов для function calling --------------------------------------
 
@@ -263,6 +285,23 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "strict": True,
     },
     {
+        "name": "get_interpretations",
+        "description": "Разъяснения и практика по норме (письма Минфина/ФНС, постановления Пленума, "
+                       "обзоры ВС), изданные не позже даты: номер, дата, обязательность, что "
+                       "цитируют, выдержка. Ненормативные: показывай как позицию ведомства/суда с "
+                       "датой; более авторитетные идут первыми (КС > ВС > пленум > ФНС > Минфин).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "unit_id": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
+            },
+            "required": ["unit_id"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
         "name": "compute_deadline",
         "description": "Срок по ст. 6.1 НК от даты события: дни (рабочие или календарные), "
                        "месяцы, кварталы, годы; учитывает перенос с выходного. Возвращает дату "
@@ -303,6 +342,11 @@ def execute_tool(corpus: Corpus, name: str, args: dict, as_of: str,
                 result = {"name": args["name"], "found": False}
         elif name == "find_terms":
             result = corpus.find_terms(args["query"], as_of)
+        elif name == "get_interpretations":
+            result = corpus.get_interpretations(args["unit_id"], as_of, int(args.get("limit") or 5))
+            if not result:
+                result = {"unit_id": args["unit_id"], "documents": [],
+                          "note": "в корпусе нет разъяснений по этой норме на дату"}
         elif name == "compute_deadline":
             r = compute_deadline(date.fromisoformat(args["start"]), int(args["amount"]),
                                  args["unit"], calendar)
