@@ -53,7 +53,14 @@ def ui() -> str:
 @app.get("/health")
 def health() -> dict:
     c = corpus()
-    return {"status": "ok", "backend": type(c).__name__}
+    out = {"status": "ok", "backend": type(c).__name__}
+    try:
+        from .providers import choose
+        p = choose("standard")
+        out["provider"] = {"name": p.name, "model": p.model, "location": p.location, "badge": p.badge()}
+    except Exception as exc:  # noqa: BLE001
+        out["provider"] = {"error": str(exc)}
+    return out
 
 
 @app.get("/units/{unit_id}")
@@ -161,16 +168,15 @@ from .workspace import Workspace  # noqa: E402
 WORKSPACES_ROOT = os.environ.get("TAXCORPUS_WORKSPACES", "workspaces")
 
 
-def make_agent():
-    """Агент для сессий дела (подменяется в тестах)."""
-    import anthropic
-    from . import load_dotenv
-    from .agent import TaxAgent
-    load_dotenv()
-    return TaxAgent(anthropic.Anthropic(max_retries=4), corpus(),
-                    model=os.environ.get("TAXCORPUS_MODEL") or "claude-opus-5",
-                    fallbacks=not os.environ.get("ANTHROPIC_BASE_URL"),
-                    calendar=ProductionCalendar.load())
+def make_agent(ws: Workspace | None = None):
+    """Агент для сессий дела по профилю провайдера (P4/F9); подменяется в тестах."""
+    from .providers import ProviderError, choose, make_agent as _make
+    manifest = ws.manifest if ws is not None else None
+    try:
+        provider = choose(getattr(manifest, "confidentiality", "standard"), getattr(manifest, "provider", None))
+    except ProviderError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return _make(corpus(), provider, calendar=ProductionCalendar.load())
 
 
 def _ws(slug: str) -> Workspace:
@@ -211,6 +217,8 @@ class WorkspaceCreate(BaseModel):
     client: str = ""
     as_of: date | None = None
     jurisdiction: str | None = None
+    confidentiality: str = Field("standard", pattern="^(standard|sensitive)$")
+    provider: str | None = None
 
 
 @app.get("/workspaces")
@@ -223,7 +231,8 @@ def create_workspace(req: WorkspaceCreate) -> dict:
     try:
         ws = Workspace.create(req.slug, req.title, client=req.client,
                               as_of=req.as_of.isoformat() if req.as_of else None,
-                              root=WORKSPACES_ROOT, jurisdiction=req.jurisdiction)
+                              root=WORKSPACES_ROOT, jurisdiction=req.jurisdiction,
+                              confidentiality=req.confidentiality, provider=req.provider)
     except (ValueError, FileExistsError) as exc:
         raise HTTPException(400, str(exc)) from exc
     return ws.manifest.to_dict()
@@ -233,8 +242,14 @@ def create_workspace(req: WorkspaceCreate) -> dict:
 def get_workspace(slug: str) -> dict:
     ws = _ws(slug)
     _sync(ws)
+    provider = None
+    try:
+        from .providers import choose
+        provider = choose(ws.manifest.confidentiality, ws.manifest.provider).badge()
+    except Exception as exc:  # noqa: BLE001
+        provider = f"недоступен: {exc}"
     return {"manifest": ws.manifest.to_dict(), "files": ws.list_files(), "tasks": ws.tasks(),
-            "sessions": CaseSession.list_sessions(ws)}
+            "sessions": CaseSession.list_sessions(ws), "provider": provider}
 
 
 class FileUpload(BaseModel):
@@ -278,7 +293,7 @@ class SessionMessage(BaseModel):
 @app.post("/workspaces/{slug}/sessions", status_code=201)
 def start_session(slug: str, req: SessionMessage) -> dict:
     ws = _ws(slug)
-    session = CaseSession(ws, make_agent())
+    session = CaseSession(ws, make_agent(ws))
     turn = session.send(req.message)
     _sync(ws, session)
     return _turn_dict(session, turn)
@@ -288,7 +303,7 @@ def start_session(slug: str, req: SessionMessage) -> dict:
 def get_session(slug: str, session_id: str) -> dict:
     ws = _ws(slug)
     try:
-        session = CaseSession.load(ws, make_agent(), session_id)
+        session = CaseSession.load(ws, make_agent(ws), session_id)
     except FileNotFoundError as exc:
         raise HTTPException(404, "нет такой сессии") from exc
     # для клиента: только видимые реплики (тексты пользователя и ответы агента), вопросы, журнал
@@ -309,7 +324,7 @@ def get_session(slug: str, session_id: str) -> dict:
 def continue_session(slug: str, session_id: str, req: SessionMessage) -> dict:
     ws = _ws(slug)
     try:
-        session = CaseSession.load(ws, make_agent(), session_id)
+        session = CaseSession.load(ws, make_agent(ws), session_id)
     except FileNotFoundError as exc:
         raise HTTPException(404, "нет такой сессии") from exc
     turn = session.send(req.message)  # при waiting_user это ответ на вопрос агента

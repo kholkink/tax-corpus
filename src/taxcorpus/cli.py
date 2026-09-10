@@ -390,14 +390,19 @@ def cmd_ask(args: argparse.Namespace) -> int:
     except ImportError:
         print("нужен пакет anthropic: pip install -e '.[agent]'", file=sys.stderr)
         return 1
-    from . import load_dotenv
-    load_dotenv()  # ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL / TAXCORPUS_MODEL / TAXCORPUS_DB
-    client = anthropic.Anthropic()  # ключ и base_url — из окружения (.env) или профиля `ant auth login`
-    import os
-    model = args.model or os.environ.get("TAXCORPUS_MODEL") or "claude-opus-5"
-    # серверный фолбэк при отказе есть только у Anthropic; для совместимых провайдеров
-    # (DeepSeek: ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic) отключаем
-    fallbacks = not args.no_fallbacks and not os.environ.get("ANTHROPIC_BASE_URL")
+    from dataclasses import replace
+    from .providers import ProviderError, choose, make_client
+    try:
+        provider = choose("standard", getattr(args, "provider", None))
+    except ProviderError as exc:
+        print(f"ошибка: {exc}", file=sys.stderr)
+        return 2
+    if args.model:
+        provider = replace(provider, model=args.model)
+    client = make_client(provider)
+    model = provider.model
+    fallbacks = provider.fallbacks and not args.no_fallbacks
+    print(f"[провайдер] {provider.badge()}", file=sys.stderr)
 
     conn = None
     if args.local:
@@ -485,18 +490,24 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     return 0
 
 
-def _make_agent(args: argparse.Namespace, corpus):
-    import os
-    import anthropic
-    from . import load_dotenv
-    from .agent import TaxAgent
+def _make_agent(args: argparse.Namespace, corpus, workspace=None):
+    """Агент по профилю провайдера (P4/F9): явный --provider > профиль дела > конфиденциальность > default."""
+    from dataclasses import replace
     from .deadlines import ProductionCalendar
-    load_dotenv()
-    model = getattr(args, "model", None) or os.environ.get("TAXCORPUS_MODEL") or "claude-opus-5"
-    fallbacks = not os.environ.get("ANTHROPIC_BASE_URL")
-    return TaxAgent(anthropic.Anthropic(max_retries=4), corpus, model=model,
-                    effort=getattr(args, "effort", "high"), fallbacks=fallbacks,
-                    calendar=ProductionCalendar.load())
+    from .providers import ProviderError, choose, make_agent
+
+    manifest = getattr(workspace, "manifest", None)
+    try:
+        provider = choose(getattr(manifest, "confidentiality", "standard"),
+                          getattr(args, "provider", None) or getattr(manifest, "provider", None))
+    except ProviderError as exc:
+        print(f"ошибка: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
+    if getattr(args, "model", None):
+        provider = replace(provider, model=args.model)
+    print(f"[провайдер] {provider.badge()}", file=sys.stderr)
+    return make_agent(corpus, provider, effort=getattr(args, "effort", "high"),
+                      calendar=ProductionCalendar.load())
 
 
 def _open_corpus(args: argparse.Namespace):
@@ -514,7 +525,8 @@ def cmd_workspace(args: argparse.Namespace) -> int:
 
     if args.ws_cmd == "new":
         ws = Workspace.create(args.slug, args.title, client=args.client or "", as_of=args.as_of,
-                              root=args.root, jurisdiction=args.jurisdiction)
+                              root=args.root, jurisdiction=args.jurisdiction,
+                              confidentiality=args.confidentiality, provider=args.provider)
         print(f"дело создано: {ws.path} (as_of {ws.manifest.as_of}); задача — notes/задача.md, "
               f"документы кладите в inbox/")
         return 0
@@ -554,7 +566,7 @@ def _chat(args: argparse.Namespace, ws) -> int:
             if snap and ws.manifest.corpus_snapshot != snap:
                 ws.manifest.corpus_snapshot = snap  # номер снимка корпуса попадает в шапки файлов агента
                 ws.save_manifest()
-        agent = _make_agent(args, corpus)
+        agent = _make_agent(args, corpus, ws)
         session = CaseSession.load(ws, agent, args.session) if args.session else CaseSession(ws, agent)
         print(f"дело «{ws.manifest.title}», сессия {session.session_id}, модель {agent.model}, "
               f"as_of {ws.manifest.as_of}. Команды: /files /tasks /quit")
@@ -804,6 +816,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_ask.add_argument("--data-dir", default="data/processed")
     p_ask.add_argument("--db-url", default=None)
     p_ask.add_argument("--calendar-dir", default=None)
+    p_ask.add_argument("--provider", default=None, help="имя профиля из config/providers.json")
     p_ask.add_argument("--no-fallbacks", action="store_true",
                        help="не использовать серверный фолбэк при отказе модели")
     p_ask.add_argument("--log", default=None, help="куда записать JSON-журнал запроса")
@@ -839,6 +852,9 @@ def build_parser() -> argparse.ArgumentParser:
     w_new.add_argument("--client", default=None)
     w_new.add_argument("--as-of", default=None, help="дата, на которую берутся нормы")
     w_new.add_argument("--jurisdiction", default=None)
+    w_new.add_argument("--confidentiality", default="standard", choices=["standard", "sensitive"],
+                       help="sensitive: локальный профиль модели или маскировка ПДн (F9)")
+    w_new.add_argument("--provider", default=None, help="имя профиля из config/providers.json")
     ws_sub.add_parser("list", help="список дел")
     w_files = ws_sub.add_parser("files", help="файлы и задачи дела")
     w_files.add_argument("--slug", required=True)
@@ -853,6 +869,7 @@ def build_parser() -> argparse.ArgumentParser:
     w_chat.add_argument("--session", default=None, help="продолжить сессию по id")
     w_chat.add_argument("--message", default=None, help="один ход без REPL (код 3 — агент ждёт ответа)")
     w_chat.add_argument("--model", default=None)
+    w_chat.add_argument("--provider", default=None, help="профиль провайдера для этого запуска")
     w_chat.add_argument("--effort", default="high")
     w_chat.add_argument("--local", action="store_true")
     w_chat.add_argument("--data-dir", default="data/processed")

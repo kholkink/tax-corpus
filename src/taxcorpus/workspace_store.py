@@ -49,14 +49,17 @@ def upsert_workspace(conn, ws: Workspace) -> int:
     m = ws.manifest
     row = conn.execute(
         """
-        INSERT INTO workspace (slug, title, client, as_of, jurisdiction, corpus_snapshot, created_at, synced_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, now())
+        INSERT INTO workspace (slug, title, client, as_of, jurisdiction, corpus_snapshot, created_at, synced_at,
+                               confidentiality, provider)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, now(), %s, %s)
         ON CONFLICT (slug) DO UPDATE SET title = EXCLUDED.title, client = EXCLUDED.client,
             as_of = EXCLUDED.as_of, jurisdiction = EXCLUDED.jurisdiction,
-            corpus_snapshot = EXCLUDED.corpus_snapshot, synced_at = now()
+            corpus_snapshot = EXCLUDED.corpus_snapshot, synced_at = now(),
+            confidentiality = EXCLUDED.confidentiality, provider = EXCLUDED.provider
         RETURNING workspace_id
         """,
-        (m.slug, m.title, m.client or None, m.as_of, m.jurisdiction, m.corpus_snapshot, m.created_at),
+        (m.slug, m.title, m.client or None, m.as_of, m.jurisdiction, m.corpus_snapshot, m.created_at,
+         m.confidentiality, m.provider),
     ).fetchone()
     return row["workspace_id"]
 

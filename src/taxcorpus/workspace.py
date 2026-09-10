@@ -48,6 +48,8 @@ class Manifest:
     tags: list[str] = field(default_factory=list)
     created_at: str = field(default_factory=_now)
     corpus_snapshot: int | None = None
+    confidentiality: str = "standard"   # standard | sensitive (F9: локальная модель или маскировка)
+    provider: str | None = None         # явный профиль провайдера (providers.py)
 
     def to_dict(self) -> dict:
         return self.__dict__.copy()
@@ -56,12 +58,17 @@ class Manifest:
 class Workspace:
     def __init__(self, path: str | Path):
         self.path = Path(path)
-        self.manifest = Manifest(**json.loads((self.path / "workspace.json").read_text(encoding="utf-8")))
+        data = json.loads((self.path / "workspace.json").read_text(encoding="utf-8"))
+        known = {f for f in Manifest.__dataclass_fields__}
+        self.manifest = Manifest(**{k: v for k, v in data.items() if k in known})
 
     # --- жизненный цикл ---------------------------------------------------------------
     @classmethod
     def create(cls, slug: str, title: str, client: str = "", as_of: str | None = None,
-               root: str | Path = ROOT_DIR, jurisdiction: str | None = None) -> "Workspace":
+               root: str | Path = ROOT_DIR, jurisdiction: str | None = None,
+               confidentiality: str = "standard", provider: str | None = None) -> "Workspace":
+        if confidentiality not in ("standard", "sensitive"):
+            raise ValueError("confidentiality: standard | sensitive")
         if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{1,60}", slug):
             raise ValueError("slug: латиница, цифры, дефис/подчёркивание, от 2 символов")
         path = Path(root) / slug
@@ -70,7 +77,8 @@ class Workspace:
         for d in ALL_DIRS:
             (path / d).mkdir(parents=True)
         manifest = Manifest(slug=slug, title=title, client=client,
-                            as_of=as_of or date.today().isoformat(), jurisdiction=jurisdiction)
+                            as_of=as_of or date.today().isoformat(), jurisdiction=jurisdiction,
+                            confidentiality=confidentiality, provider=provider)
         (path / "workspace.json").write_text(json.dumps(manifest.to_dict(), ensure_ascii=False, indent=2),
                                              encoding="utf-8")
         (path / "tasks.json").write_text("[]", encoding="utf-8")

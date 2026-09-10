@@ -65,7 +65,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--local", action="store_true")
     ap.add_argument("--as-of", default=GOLDEN.get("as_of") or date.today().isoformat())
     ap.add_argument("--limit", type=int, default=None)
-    ap.add_argument("--model", default=None, help="по умолчанию TAXCORPUS_MODEL из .env")
+    ap.add_argument("--model", default=None, help="по умолчанию модель профиля провайдера")
+    ap.add_argument("--provider", default=None, help="имя профиля из config/providers.json")
     ap.add_argument("--effort", default="high")
     ap.add_argument("--db-url", default=None)
     ap.add_argument("--no-resume", action="store_true", help="не пропускать уже оценённые вопросы")
@@ -75,13 +76,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.rescore:
         return rescore(args)
 
-    import anthropic
+    from dataclasses import replace
     from taxcorpus import load_dotenv
+    from taxcorpus.providers import choose, make_client
     load_dotenv(str(ROOT / ".env"))
-    import os
-    args.model = args.model or os.environ.get("TAXCORPUS_MODEL") or "claude-opus-5"
-    fallbacks = not os.environ.get("ANTHROPIC_BASE_URL")
-    client = anthropic.Anthropic(max_retries=4)  # обрывы соединения провайдера
+    provider = choose("standard", args.provider)          # профиль из config/providers.json или .env
+    if args.model:
+        provider = replace(provider, model=args.model)
+    args.model, fallbacks = provider.model, provider.fallbacks
+    client = make_client(provider)  # max_retries=4: обрывы соединения провайдера
+    print(f"[провайдер] {provider.badge()}", file=sys.stderr)
     conn = None
     if args.local:
         corpus = LocalCorpus(ROOT / "data" / "processed")

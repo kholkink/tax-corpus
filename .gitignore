@@ -31,3 +31,6 @@ data/index/
 # дела юристов (конфиденциально; пример — workspaces/demo)
 workspaces/*
 !workspaces/demo/
+
+# профили провайдера с адресами (ключи — только через переменные окружения)
+config/providers.json
