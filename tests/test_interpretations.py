@@ -107,3 +107,11 @@ def test_doc_citation_does_not_cross_sentence():
     checks = idx.verify_doc_citations(
         "…действия за его пределами незаконны. Письмо ФНС от 11.03.2024 № БС-4-11/2702@ — статус outdated.")
     assert len(checks) == 1 and checks[0]["raw"].startswith("Письмо ФНС")
+
+
+def test_load_documents_skips_positions_registry(tmp_path):
+    import json
+    from taxcorpus.interpretations import load_documents
+    (tmp_path / "letters.jsonl").write_text(json.dumps(LETTER.__dict__, ensure_ascii=False) + "\n", encoding="utf-8")
+    (tmp_path / "positions.jsonl").write_text('{"position_id": "a#b", "doc_id": "a", "unit_id": "b", "stance": "neutral"}\n', encoding="utf-8")
+    assert [d.doc_id for d in load_documents(tmp_path)] == [LETTER.doc_id]
