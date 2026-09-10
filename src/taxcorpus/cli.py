@@ -485,6 +485,120 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     return 0
 
 
+def _make_agent(args: argparse.Namespace, corpus):
+    import os
+    import anthropic
+    from . import load_dotenv
+    from .agent import TaxAgent
+    from .deadlines import ProductionCalendar
+    load_dotenv()
+    model = getattr(args, "model", None) or os.environ.get("TAXCORPUS_MODEL") or "claude-opus-5"
+    fallbacks = not os.environ.get("ANTHROPIC_BASE_URL")
+    return TaxAgent(anthropic.Anthropic(max_retries=4), corpus, model=model,
+                    effort=getattr(args, "effort", "high"), fallbacks=fallbacks,
+                    calendar=ProductionCalendar.load())
+
+
+def _open_corpus(args: argparse.Namespace):
+    from .tools import DbCorpus, LocalCorpus
+    if getattr(args, "local", False):
+        return LocalCorpus(args.data_dir), None
+    from .db import connect
+    conn = connect(getattr(args, "db_url", None))
+    return DbCorpus(conn, args.data_dir), conn
+
+
+def cmd_workspace(args: argparse.Namespace) -> int:
+    """Рабочее пространство дела: new / list / files / add / sessions / chat."""
+    from .workspace import Workspace
+
+    if args.ws_cmd == "new":
+        ws = Workspace.create(args.slug, args.title, client=args.client or "", as_of=args.as_of,
+                              root=args.root, jurisdiction=args.jurisdiction)
+        print(f"дело создано: {ws.path} (as_of {ws.manifest.as_of}); задача — notes/задача.md, "
+              f"документы кладите в inbox/")
+        return 0
+    if args.ws_cmd == "list":
+        for m in Workspace.list_all(args.root):
+            print(f"{m['slug']:24s} {m['title']} — {m.get('client') or '—'} (as_of {m['as_of']})")
+        return 0
+    ws = Workspace.open(args.slug, args.root)
+    if args.ws_cmd == "files":
+        for f in ws.list_files():
+            print(f"{f['owner']:6s} {f['size']:>8}  {f['path']}")
+        for t in ws.tasks():
+            print(f"задача #{t['id']} [{t['status']}] {t['title']}" + (f" до {t['due']}" if t.get("due") else ""))
+        return 0
+    if args.ws_cmd == "add":
+        for f in args.files:
+            print("добавлен:", ws.add_file(f, args.dest))
+        return 0
+    from .case_session import CaseSession
+    if args.ws_cmd == "sessions":
+        for s in CaseSession.list_sessions(ws):
+            print(f"{s['session_id']}  {s['status']:12s} ходов: {s['turns']}  обновлено {s['updated_at']}")
+        return 0
+    if args.ws_cmd == "chat":
+        return _chat(args, ws)
+    return 1
+
+
+def _chat(args: argparse.Namespace, ws) -> int:
+    from .case_session import CaseSession
+
+    corpus, conn = _open_corpus(args)
+    try:
+        agent = _make_agent(args, corpus)
+        session = CaseSession.load(ws, agent, args.session) if args.session else CaseSession(ws, agent)
+        print(f"дело «{ws.manifest.title}», сессия {session.session_id}, модель {agent.model}, "
+              f"as_of {ws.manifest.as_of}. Команды: /files /tasks /quit")
+        if session.status == "waiting_user" and session.pending:
+            print(f"\n[вопрос агента] {session.pending['question']}")
+            if session.pending.get("options"):
+                print("   варианты: " + " | ".join(session.pending["options"]))
+
+        def show(turn) -> None:
+            if turn.kind == "question":
+                print(f"\n[вопрос агента] {turn.question['question']}")
+                if turn.question.get("options"):
+                    print("   варианты: " + " | ".join(turn.question["options"]))
+            else:
+                print("\n" + turn.text)
+                if turn.verification is not None:
+                    print("\n" + turn.verification.render())
+                if turn.files_written:
+                    print("файлы агента: " + ", ".join(sorted(set(turn.files_written))))
+
+        if args.message:
+            show(session.send(args.message))
+            return 0 if session.status != "waiting_user" else 3
+        while True:
+            try:
+                line = input("\nюрист> ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            if not line:
+                continue
+            if line == "/quit":
+                break
+            if line == "/files":
+                for f in ws.list_files():
+                    print(f"  {f['owner']:6s} {f['path']}")
+                continue
+            if line == "/tasks":
+                for t in ws.tasks():
+                    print(f"  #{t['id']} [{t['status']}] {t['title']}")
+                continue
+            show(session.send(line))
+        session.save()
+        print(f"сессия сохранена: {session.path}")
+        return 0
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="taxcorpus", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -622,6 +736,35 @@ def build_parser() -> argparse.ArgumentParser:
     p_snap.add_argument("--db-url", default=None)
     p_snap.add_argument("--schema", default=None)
     p_snap.set_defaults(func=cmd_snapshot)
+
+    p_ws = sub.add_parser("workspace", help="рабочее пространство дела (docs/workspace-plan.md)")
+    p_ws.add_argument("--root", default="workspaces")
+    ws_sub = p_ws.add_subparsers(dest="ws_cmd", required=True)
+    w_new = ws_sub.add_parser("new", help="создать дело")
+    w_new.add_argument("--slug", required=True)
+    w_new.add_argument("--title", required=True)
+    w_new.add_argument("--client", default=None)
+    w_new.add_argument("--as-of", default=None, help="дата, на которую берутся нормы")
+    w_new.add_argument("--jurisdiction", default=None)
+    ws_sub.add_parser("list", help="список дел")
+    w_files = ws_sub.add_parser("files", help="файлы и задачи дела")
+    w_files.add_argument("--slug", required=True)
+    w_add = ws_sub.add_parser("add", help="добавить файлы юриста в дело")
+    w_add.add_argument("--slug", required=True)
+    w_add.add_argument("--dest", default="inbox", choices=["inbox", "notes"])
+    w_add.add_argument("files", nargs="+")
+    w_sess = ws_sub.add_parser("sessions", help="сессии дела")
+    w_sess.add_argument("--slug", required=True)
+    w_chat = ws_sub.add_parser("chat", help="диалог с агентом в деле (REPL или --message)")
+    w_chat.add_argument("--slug", required=True)
+    w_chat.add_argument("--session", default=None, help="продолжить сессию по id")
+    w_chat.add_argument("--message", default=None, help="один ход без REPL (код 3 — агент ждёт ответа)")
+    w_chat.add_argument("--model", default=None)
+    w_chat.add_argument("--effort", default="high")
+    w_chat.add_argument("--local", action="store_true")
+    w_chat.add_argument("--data-dir", default="data/processed")
+    w_chat.add_argument("--db-url", default=None)
+    p_ws.set_defaults(func=cmd_workspace)
 
     return parser
 

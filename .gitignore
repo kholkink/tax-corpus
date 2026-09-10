@@ -27,3 +27,7 @@ data/raw/courts/
 
 # семантический индекс (десятки МБ, строится командой embed)
 data/index/
+
+# дела юристов (конфиденциально; пример — workspaces/demo)
+workspaces/*
+!workspaces/demo/
