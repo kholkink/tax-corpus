@@ -98,12 +98,13 @@ class TaxAgent:
         self.fallbacks = fallbacks
         self.calendar = calendar
 
-    def _create(self, system: str, messages: list[dict], tool_choice: dict | None = None):
+    def _create(self, system: str, messages: list[dict], tool_choice: dict | None = None,
+                tools: list[dict] | None = None):
         kwargs = dict(
             model=self.model,
             max_tokens=16000,
             system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
-            tools=TOOL_DEFINITIONS,
+            tools=tools if tools is not None else TOOL_DEFINITIONS,
             messages=messages,
             thinking={"type": "adaptive"},
             output_config={"effort": self.effort},
