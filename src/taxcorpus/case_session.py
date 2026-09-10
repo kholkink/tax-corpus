@@ -134,6 +134,17 @@ class CaseSession:
                 result = self.ws.append_note(args["path"], args["text"])
             elif name == "create_task":
                 result = self.ws.create_task(args["title"], args.get("due"), args.get("details", ""))
+            elif name == "audit_document":
+                from .audit import audit_text, render_markdown
+                text = self.ws.text_of(args["path"])
+                report = audit_text(self.agent.corpus, text, self.ws.manifest.as_of, args.get("doc_date"))
+                out_path = "research/аудит-" + Path(args["path"]).stem + ".md"
+                self.ws.write_file(out_path, render_markdown(report),
+                                   {"summary": f"аудит {args['path']}", "audit": report.counts})
+                self.files_written.append(out_path)
+                result = {**report.to_dict(), "report_path": out_path}
+                result["items"] = [{k: v for k, v in it.items() if k not in ("start", "end")}
+                                   for it in result["items"]]
             else:
                 return json.dumps({"error": f"неизвестный инструмент {name}"}, ensure_ascii=False), True
             return json.dumps(result, ensure_ascii=False, default=str), False

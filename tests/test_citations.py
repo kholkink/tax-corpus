@@ -36,7 +36,9 @@ def test_extract_citations_variants():
         "Согласно подп. 2 п. 2 ст. 10 НК РФ и пункту 1 статьи 11 Кодекса, а также ст. 6.1 НК, "
         "абзац второй п. 1 ст. 11 и пп. 4 п. 1 ст. 218 Налогового кодекса Российской Федерации.")
     assert [i["article"] for i in items] == ["10", "11", "6.1", "11", "218"]
-    assert items[0] == {"raw": "подп. 2 п. 2 ст. 10 НК РФ", "article": "10", "point": "2", "subpoint": "2"}
+    first = {k: v for k, v in items[0].items() if k not in ("start", "end")}
+    assert first == {"raw": "подп. 2 п. 2 ст. 10 НК РФ", "article": "10", "point": "2", "subpoint": "2"}
+    assert items[0]["start"] == 9 and items[0]["end"] == 34
     assert items[1]["point"] == "1" and items[1]["raw"].endswith("Кодекса")
     assert items[3]["paragraph_ordinal"] == 2
     assert items[4]["subpoint"] == "4"

@@ -53,6 +53,7 @@
 <body>
 <header>
   <h1>tax-corpus · рабочее пространство юриста</h1>
+  <nav><button class="secondary" id="tab-case">Дело</button> <button class="secondary" id="tab-audit">Аудит документа</button></nav>
   <span class="meta" id="backend"></span>
   <span class="meta" id="ws-meta"></span>
 </header>
@@ -94,6 +95,26 @@
     <div id="sessions"></div>
   </aside>
 </main>
+<section id="audit-view" hidden style="padding:16px; overflow:auto; grid-column: 1 / -1;">
+  <h2>Аудит документа: каждая ссылка — существует? действует на дату? менялась после даты документа? сняты ли письма?</h2>
+  <div style="display:grid; grid-template-columns: 1fr 200px 200px 160px; gap:8px; align-items:end; max-width:1000px">
+    <div><label class="status">Текст документа (или загрузите файл)</label><textarea id="audit-text" style="min-height:140px"></textarea></div>
+    <div><label class="status">Нормы на дату</label><input type="date" id="audit-asof"></div>
+    <div><label class="status">Дата документа</label><input type="date" id="audit-docdate"></div>
+    <div style="display:grid; gap:6px"><button id="audit-run">Проверить</button><button class="secondary" id="audit-upload-btn">Файл…</button><input type="file" id="audit-upload" hidden></div>
+  </div>
+  <div id="audit-summary" class="status" style="margin:10px 0"></div>
+  <div id="audit-html" class="msg agent" style="max-width:1000px"></div>
+  <div id="audit-table" style="max-width:1000px"></div>
+  <style>
+    mark.audit { padding:0 2px; border-radius:3px; cursor:help; }
+    mark.audit.ok { background:#dcfce7; } mark.audit.stale, mark.audit.outdated_doc { background:#fee2e2; }
+    mark.audit.missing, mark.audit.unknown_doc { background:#fecaca; text-decoration:line-through; }
+    mark.audit.partial { background:#fef3c7; } mark.audit.external { background:#e5e7eb; }
+    table.audit { border-collapse:collapse; width:100%; font-size:13px; margin-top:10px; }
+    table.audit td, table.audit th { border:1px solid var(--line); padding:4px 6px; vertical-align:top; }
+  </style>
+</section>
 <dialog id="unit-dialog"><h3 id="unit-title"></h3><div class="status" id="unit-meta"></div><pre id="unit-text"></pre><form method="dialog"><button>Закрыть</button></form></dialog>
 
 <script>
@@ -208,6 +229,32 @@ $('upload').onchange = async e => {
     await api(`/workspaces/${state.slug}/files`, {method:'POST', body: JSON.stringify({name:file.name, content_base64: btoa(bin), dest:'inbox'})});
   }
   const w = await api(`/workspaces/${state.slug}`); renderFiles(w.files); e.target.value = '';
+};
+// --- аудит документа ---
+const caseEls = ['ws-list','messages'].map(id => $(id).closest('aside, section'));
+function showTab(name) {
+  document.querySelectorAll('main > aside, main > section.chat').forEach(el => el.hidden = (name === 'audit'));
+  $('audit-view').hidden = (name !== 'audit');
+}
+$('tab-case').onclick = () => showTab('case'); $('tab-audit').onclick = () => showTab('audit');
+$('audit-upload-btn').onclick = () => $('audit-upload').click();
+let auditFile = null;
+$('audit-upload').onchange = e => { auditFile = e.target.files[0] || null; if (auditFile) $('audit-text').placeholder = 'файл: ' + auditFile.name; };
+const LABEL = {ok:'OK', stale:'НЕ ДЕЙСТВУЕТ', missing:'НЕТ В КОРПУСЕ', partial:'НЕТОЧНО', unknown_doc:'НЕТ В РЕЕСТРЕ', outdated_doc:'ПИСЬМО СНЯТО', external:'ВНЕШНИЙ АКТ'};
+$('audit-run').onclick = async () => {
+  const payload = {as_of: $('audit-asof').value || null, doc_date: $('audit-docdate').value || null};
+  if (auditFile) { const buf = await auditFile.arrayBuffer(); let bin=''; new Uint8Array(buf).forEach(b => bin += String.fromCharCode(b)); payload.name = auditFile.name; payload.content_base64 = btoa(bin); }
+  else payload.text = $('audit-text').value;
+  $('audit-summary').innerHTML = '<span class="spinner"></span> проверяю…';
+  try {
+    const r = await api('/audit', {method:'POST', body: JSON.stringify(payload)});
+    $('audit-summary').textContent = `ссылок: ${r.items.length}; ` + Object.entries(r.counts).map(([k,v]) => `${LABEL[k]||k}: ${v}`).join(', ') + (r.ok ? ' — замечаний нет' : '');
+    $('audit-html').innerHTML = r.html;
+    $('audit-table').innerHTML = '<table class="audit"><tr><th>#</th><th>ссылка</th><th>статус</th><th>цель</th><th>примечание</th></tr>' +
+      r.items.map((it, i) => `<tr><td>${i+1}</td><td>${esc(it.raw)}</td><td><mark class="audit ${it.status}">${LABEL[it.status]}</mark></td><td>${esc(it.label||it.target_id||'—')}</td><td>${esc(it.note||'')}${it.changed_since_doc.length?' · менялась после даты документа: '+it.changed_since_doc.map(a=>a.law+' с '+a.effective_date).join('; '):''}${it.outdated_letters.length?' · сняты письма: '+it.outdated_letters.map(d=>d.number).join('; '):''}</td></tr>`).join('') + '</table>' +
+      (r.suggestions.length ? '<h3>Не упомянуты обязательные письма ФНС по цитируемым нормам</h3><ul>' + r.suggestions.map(s => `<li>${esc(s.number)} от ${s.date} — ${esc(s.title)} (по ${s.for_unit})</li>`).join('') + '</ul>' : '');
+    document.querySelectorAll('#audit-table mark, #audit-html mark').forEach(m => m.onclick = () => {});
+  } catch (e) { $('audit-summary').textContent = 'Ошибка: ' + e.message; }
 };
 api('/health').then(h => $('backend').textContent = 'бэкенд: ' + h.backend).catch(()=>{});
 loadWorkspaces();

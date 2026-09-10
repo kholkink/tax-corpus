@@ -92,7 +92,8 @@ def extract_citations(text: str) -> list[dict]:
     """Текст -> [{raw, article, point?, subpoint?, paragraph_ordinal?}] в порядке вхождения."""
     out: list[dict] = []
     for m in RE_CITATION_IN_TEXT.finditer(text):
-        item: dict = {"raw": m.group(0).strip(), "article": m.group("article")}
+        item: dict = {"raw": m.group(0).strip(), "article": m.group("article"),
+                      "start": m.start(), "end": m.end()}
         if m.group("point"):
             item["point"] = m.group("point")
         if m.group("sub"):
