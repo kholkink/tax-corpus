@@ -183,6 +183,15 @@ python -m taxcorpus workspace confirm-fact --slug delo1 --id 2
 python -m taxcorpus workspace timeline --slug delo1
 python -m taxcorpus workspace deadlines --slug delo1             # сроки со ссылками на нормы -> задачи
 
+# карта позиций по норме (F4): позиции писем/пленумов/обзоров по каждой норме извлекает модель
+# (stance pro_taxpayer | pro_authority | neutral + дословная цитата, проверяемая по тексту документа;
+# без точной цитаты позиция отклоняется), реестр — data/interpretations/positions.jsonl, зеркало — таблица
+# position; инструмент агента get_position_map (conflict = позиции расходятся), API /units/{id}/positions,
+# вкладка «Позиции» в карточке нормы. Краулер судебных актов — по списку первоисточников
+# (scripts/fetch_court_acts.py): vsrf.ru — JS-приложение без открытого списка, ksrf.ru отдаёт 403 роботам.
+python -m taxcorpus jobs run extract_positions -- --limit 100 --kinds plenum,review   # платно, инкрементально
+python -m taxcorpus jobs run load_docs                                                # позиции -> БД
+
 # объяснимость (F12): каждый результат поиска несёт sources (lexical/dense), matched_terms и why
 # («все слова запроса; близко по смыслу — совпали: …»); карточка нормы GET /units/{id}/card —
 # текст на дату, лента правок, письма и практика (с пометкой обязательных), версии текста,

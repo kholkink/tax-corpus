@@ -147,9 +147,9 @@
 </section>
 <dialog id="unit-dialog" style="max-width:900px">
   <h3 id="unit-title"></h3><div class="status" id="unit-meta"></div>
-  <nav style="margin:8px 0"><button class="secondary" data-card="text">Текст на дату</button> <button class="secondary" data-card="amend">Правки</button> <button class="secondary" data-card="docs">Письма и практика</button> <button class="secondary" data-card="versions">Версии</button> <button class="secondary" data-card="params">Параметры</button></nav>
+  <nav style="margin:8px 0"><button class="secondary" data-card="text">Текст на дату</button> <button class="secondary" data-card="amend">Правки</button> <button class="secondary" data-card="docs">Письма и практика</button> <button class="secondary" data-card="positions">Позиции</button> <button class="secondary" data-card="versions">Версии</button> <button class="secondary" data-card="params">Параметры</button></nav>
   <pre id="unit-text"></pre>
-  <div id="card-amend" hidden></div><div id="card-docs" hidden></div><div id="card-versions" hidden></div><div id="card-params" hidden></div>
+  <div id="card-amend" hidden></div><div id="card-docs" hidden></div><div id="card-positions" hidden></div><div id="card-versions" hidden></div><div id="card-params" hidden></div>
   <form method="dialog" style="margin-top:8px"><button>Закрыть</button></form>
 </dialog>
 
@@ -233,7 +233,7 @@ async function showUnit(cite) {
 // --- карточка нормы (F12): текст на дату, правки, письма и практика, версии, параметры ---
 function cardTab(name) {
   $('unit-text').hidden = name !== 'text';
-  for (const t of ['amend','docs','versions','params']) $('card-' + t).hidden = (name !== t);
+  for (const t of ['amend','docs','positions','versions','params']) $('card-' + t).hidden = (name !== t);
 }
 document.querySelectorAll('[data-card]').forEach(b => b.onclick = () => cardTab(b.dataset.card));
 async function showCard(unitId) {
@@ -241,10 +241,15 @@ async function showCard(unitId) {
   const u = c.unit;
   $('unit-title').textContent = u ? u.label : unitId;
   $('unit-meta').textContent = (u ? `${u.context||''} · действует ${u.valid_from||'?'} … ${u.valid_to||'наст. время'}` : `на ${c.as_of} НЕ ДЕЙСТВУЕТ`) +
-    ` · правок: ${c.explain.amendments} · писем/актов: ${c.explain.interpretations}${c.explain.mandatory_letters ? ' (обязательных ФНС: ' + c.explain.mandatory_letters + ')' : ''} · версий текста: ${c.explain.versions}`;
+    ` · правок: ${c.explain.amendments} · писем/актов: ${c.explain.interpretations} · позиций: ${c.explain.positions}${c.explain.conflict ? ' (РАСХОДЯТСЯ)' : ''}${c.explain.mandatory_letters ? ' (обязательных ФНС: ' + c.explain.mandatory_letters + ')' : ''} · версий текста: ${c.explain.versions}`;
   $('unit-text').textContent = u ? u.full_text : '— текст на эту дату не действует; см. «Версии» —';
   $('card-amend').innerHTML = c.amendments.length ? '<table class="facts"><tr><th>с</th><th>закон</th><th>что</th></tr>' + c.amendments.map(a => `<tr><td>${a.effective_date||'?'}</td><td>${esc((a.amending_act_number||'') + (a.amending_act_date ? ' от ' + a.amending_act_date : ''))}</td><td>${esc(a.operation||'')}${a.scope==='child'?' (в подпункте)':''}<div class="status">${esc((a.raw_note||'').slice(0,200))}</div></td></tr>`).join('') + '</table>' : '<div class="status">в редакции нет отметок о правках этой единицы</div>';
   $('card-docs').innerHTML = c.interpretations.length ? c.interpretations.map(d => `<div class="task"><b>${esc(d.agency||'')} ${esc(d.number||'')}</b> от ${d.date||''}${d.mandatory ? ' <span class="status">обязательное для налоговых органов</span>' : ''}${d.status && d.status !== 'active' ? ` <span class="status" style="color:#b91c1c">${esc(d.status)}</span>` : ''}<div>${esc(d.title||'')}</div><div class="status">${esc((d.excerpt||'').slice(0,300))}</div>${d.source_url ? `<a href="${esc(d.source_url)}" target="_blank" rel="noopener">источник</a>` : ''}</div>`).join('') : '<div class="status">писем и судебных актов по этой норме в реестре нет</div>';
+  const STANCE = {pro_taxpayer:'в пользу налогоплательщика', pro_authority:'в пользу налогового органа', neutral:'нейтрально'};
+  const pm = c.positions;
+  $('card-positions').innerHTML = (c.explain.positions ? (pm.conflict ? `<div class="task" style="background:#fef3c7"><b>Позиции расходятся.</b> ${esc(pm.note||'')}</div>` : '') +
+    Object.entries(pm.positions).filter(([k,v]) => v.length).map(([k,v]) => `<h4>${STANCE[k]||k} (${v.length})</h4>` + v.map(x => `<div class="task"><b>${esc(x.agency||'')} ${esc(x.number||'')}</b> от ${x.date||''}${x.mandatory?' <span class="status">обязательное</span>':''}${x.older_than_last_amendment?' <span class="status" style="color:#b45309">старше последней правки нормы</span>':''}${x.doc_status && x.doc_status!=='actual'?` <span class="status" style="color:#b91c1c">${esc(x.doc_status)}</span>`:''}${x.verified?' ✓':''}<div>${esc(x.summary)}</div><div class="status">«${esc(x.quote)}»</div><small class="status">${esc(x.unit_id)} · уверенность ${x.confidence}</small></div>`).join('')).join('')
+    : '<div class="status">позиций по этой норме в реестре нет (jobs run extract_positions)</div>');
   $('card-versions').innerHTML = c.versions.length ? '<table class="facts"><tr><th>действует с</th><th>по</th><th>редакция</th><th>отметка</th><th>знаков</th></tr>' + c.versions.map(v => `<tr class="${v.current?'':'unconfirmed'}"><td>${v.valid_from||'?'}</td><td>${v.valid_to||'наст. время'}</td><td>${esc(v.edition||'')}</td><td>${esc(v.edit_note||'')}</td><td>${v.chars}</td></tr>`).join('') + '</table>' : '<div class="status">история версий доступна с БД (в офлайн-режиме — одна редакция)</div>';
   $('card-params').innerHTML = c.parameters.length ? '<table class="facts"><tr><th>параметр</th><th>значение</th><th>с</th><th>по</th><th>якорь</th></tr>' + c.parameters.map(p => `<tr><td>${esc(p.title||p.name)}</td><td>${p.value} ${esc(p.unit)}</td><td>${p.valid_from||'?'}</td><td>${p.valid_to||'—'}</td><td class="status">${esc(p.anchor)}</td></tr>`).join('') + '</table>' : '<div class="status">параметров (ставок, сроков), заякоренных в этой норме, нет</div>';
   cardTab('text'); $('unit-dialog').showModal();
