@@ -98,7 +98,8 @@ class Document:
 
 def load_documents(path_or_dir: str | Path) -> list[Document]:
     p = Path(path_or_dir)
-    files = sorted(p.glob("*.jsonl")) if p.is_dir() else [p]
+    # positions*.jsonl в той же папке — реестр позиций (positions.py), не документы
+    files = sorted(f for f in p.glob("*.jsonl") if not f.name.startswith("positions")) if p.is_dir() else [p]
     docs: list[Document] = []
     for f in files:
         with f.open(encoding="utf-8") as fh:
