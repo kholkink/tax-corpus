@@ -227,8 +227,9 @@ def cmd_term(args: argparse.Namespace) -> int:
         print(f"термин «{args.term}» не найден", file=sys.stderr)
         return 1
     for r in rows[: args.limit]:
+        where = "" if r["scope"] == "code" else f"; область: {r['scope_unit_id']}"
         print(f"{r['term']} — {r['definition']}")
-        print(f"   [{r['definition_unit_id']} — {r['label']}]")
+        print(f"   [{r['definition_unit_id']} — {r['label']}{where}]")
     return 0
 
 
@@ -330,6 +331,27 @@ def cmd_diff(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_deadline(args: argparse.Namespace) -> int:
+    """Срок по ст. 6.1 НК (compute_deadline): каждая операция — со ссылкой на пункт."""
+    from .deadlines import ProductionCalendar, compute_deadline
+
+    unit = "calendar_days" if args.unit == "days" and args.calendar_days else args.unit
+    try:
+        result = compute_deadline(date.fromisoformat(args.start), args.amount, unit,
+                                  ProductionCalendar.load(args.calendar_dir))
+    except ValueError as exc:
+        print(f"ошибка: {exc}", file=sys.stderr)
+        return 1
+    print(f"срок {args.amount} {unit} от {args.start}: окончание {result.end.isoformat()}"
+          + (f" (номинально {result.nominal_end.isoformat()})" if result.shifted else ""))
+    for step in result.steps:
+        print(f"  - {step}")
+    print("нормы: " + ", ".join(result.applied))
+    if result.calendar_note:
+        print(f"[внимание] {result.calendar_note}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="taxcorpus", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -412,6 +434,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_term.add_argument("--limit", type=int, default=5)
     p_term.add_argument("--db-url", default=None)
     p_term.set_defaults(func=cmd_term)
+
+    p_dl = sub.add_parser("deadline", help="срок по ст. 6.1 НК (compute_deadline)")
+    p_dl.add_argument("--start", required=True, help="дата события/начала (YYYY-MM-DD)")
+    p_dl.add_argument("--amount", required=True, type=int)
+    p_dl.add_argument("--unit", default="days", choices=["days", "months", "quarters", "years"])
+    p_dl.add_argument("--calendar-days", action="store_true",
+                      help="срок в календарных днях (по умолчанию дни — рабочие, п. 6 ст. 6.1)")
+    p_dl.add_argument("--calendar-dir", default=None,
+                      help="каталог с переносами выходных по годам (data/calendar/<год>.json)")
+    p_dl.set_defaults(func=cmd_deadline)
 
     return parser
 

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from taxcorpus.amendments import amendments_from_records
-from taxcorpus.terms import extract_terms, split_definition
+from taxcorpus.terms import dictionary_scope, extract_terms, split_definition
 
 ROOT = Path(__file__).resolve().parents[1]
 SEED = json.loads((ROOT / "data" / "parameters" / "parameters_v0.json").read_text(encoding="utf-8"))
@@ -71,5 +71,20 @@ def test_terms_from_article_11(corpus):
     terms = {r["term"] for r in rows}
     assert {"организации", "физические лица", "индивидуальные предприниматели",
             "коэффициент-дефлятор"} <= terms
-    assert len(rows) >= 25
-    assert all(r["definition_unit_id"].startswith("nk1.ch1.art11.p2.ab") for r in rows)
+    code_rows = [r for r in rows if r["definition_unit_id"].startswith("nk1.ch1.art11.p2.ab")]
+    assert len(code_rows) >= 25 and all(r["scope"] == "code" for r in code_rows)
+    # отраслевые словари: подпункты со своей областью действия
+    chapter_rows = [r for r in rows if r["scope"] == "chapter"]
+    assert chapter_rows and all(r["scope_unit_id"] and r["scope_unit_id"].count(".") == 1
+                                for r in chapter_rows)
+    psn = [r for r in rows if r["definition_unit_id"].startswith("nk2.ch26-5.art346-43.p3.sp")]
+    assert len(psn) >= 15 and all(r["scope"] == "point" for r in psn)
+    assert all(r["scope_unit_id"] == "nk2.ch26-5.art346-43" for r in psn)
+    assert len(rows) >= 55
+
+
+def test_dictionary_scope():
+    assert dictionary_scope("Для целей настоящего Кодекса используются следующие понятия:") == "code"
+    assert dictionary_scope("В целях настоящей главы используются следующие понятия:") == "chapter"
+    assert dictionary_scope("В целях пункта 2 настоящей статьи используются следующие понятия:") == "point"
+    assert dictionary_scope("В целях настоящей статьи понятия и термины:") == "article"
