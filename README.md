@@ -23,6 +23,8 @@ src/taxcorpus/
   terms.py      — термины: ст. 11 и отраслевые словари («в целях настоящей главы …
                   понятия:») с областью действия -> таблица term
   deadlines.py  — compute_deadline по ст. 6.1 (п. 2–8), производственный календарь
+  calculators.py — пени (ст. 75 + ключевая ставка ЦБ), штрафы (ст. 112/114/119/122/126), сроки
+                  обжалования, срок давности — каждый шаг со ссылкой на пункт
   citations.py  — проверка цитат в тексте ответа: резолв + действие на дату (OK/STALE/MISS/PART)
   tools.py      — инструменты агента (слой 5) с двумя бэкендами: DbCorpus (PostgreSQL) и
                   LocalCorpus (JSONL, офлайн); описания для function calling
@@ -39,7 +41,7 @@ src/taxcorpus/
                   embed, snapshot, eval_search, eval_agent, daily; журнал job_run
   api.py        — FastAPI: /units, /search, /resolve, /parameters, /terms, /interpretations,
                   /deadline, /ask
-  cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term / deadline / ask / load-docs / interpretations / embed / workspace / audit / jobs
+  cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term / deadline / ask / load-docs / interpretations / embed / workspace / audit / jobs / calc
 sql/schema.sql  — базовая схема (идемпотентна): Act / Edition / Unit / UnitText / Reference /
                   Amendment / Parameter / Term / Document / Snapshot; sql/migrations/NNN_*.sql —
                   нумерованные миграции, применяются один раз (schema_version); 001 — метаданные
@@ -172,6 +174,13 @@ python -m taxcorpus jobs run daily            # краулеры -> load_docs ->
 python -m taxcorpus jobs run crawl_fns -- --pages 114
 python -m taxcorpus jobs history --limit 20
 python -m taxcorpus jobs cron                 # строки для crontab (03:00 daily, пн 04:00 eval_agent)
+
+# калькуляторы с цитатами (F5 плана ПО): пени по ст. 75 с ключевой ставкой ЦБ по дням
+# (правила 1/300 и 1/150 по периодам, п. 4/5/5.1), штрафы ст. 119/122/126 со смягчающими и
+# отягчающими (ст. 112, 114), сроки обжалования (ст. 100, 101, 139, 139.1), срок давности (ст. 113);
+# инструменты агента, POST /calc/{name}, ключевая ставка — data/parameters/key_rate.json (задача crawl_key_rate)
+python -m taxcorpus calc compute_penalty amount=1200000 due_date=2026-01-28 paid_date=2026-06-15 taxpayer=organization
+python -m taxcorpus calc compute_fine article=119 base=200000 due_date=2025-04-25 actual_date=2025-07-01 documents=0 'mitigating=["тяжёлое положение"]' aggravating=false reduction_factor=2
 
 # оценка агента на эталоне (метрики §6 плана: citation precision/recall, hallucination
 # rate, temporal correctness, abstention; каждый вопрос — платный запрос к модели):

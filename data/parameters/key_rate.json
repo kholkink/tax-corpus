@@ -1,0 +1,284 @@
+{
+  "source_url": "https://www.cbr.ru/hd_base/KeyRate/",
+  "retrieved_at": "2026-09-10T20:08:58+00:00",
+  "first_day": "2016-01-01",
+  "last_day": "2026-09-10",
+  "unit": "percent_per_year",
+  "intervals": [
+    {
+      "valid_from": "2016-01-01",
+      "valid_to": "2016-06-14",
+      "rate": 11.0
+    },
+    {
+      "valid_from": "2016-06-14",
+      "valid_to": "2016-09-19",
+      "rate": 10.5
+    },
+    {
+      "valid_from": "2016-09-19",
+      "valid_to": "2017-03-27",
+      "rate": 10.0
+    },
+    {
+      "valid_from": "2017-03-27",
+      "valid_to": "2017-05-02",
+      "rate": 9.75
+    },
+    {
+      "valid_from": "2017-05-02",
+      "valid_to": "2017-06-19",
+      "rate": 9.25
+    },
+    {
+      "valid_from": "2017-06-19",
+      "valid_to": "2017-09-18",
+      "rate": 9.0
+    },
+    {
+      "valid_from": "2017-09-18",
+      "valid_to": "2017-10-30",
+      "rate": 8.5
+    },
+    {
+      "valid_from": "2017-10-30",
+      "valid_to": "2017-12-18",
+      "rate": 8.25
+    },
+    {
+      "valid_from": "2017-12-18",
+      "valid_to": "2018-02-12",
+      "rate": 7.75
+    },
+    {
+      "valid_from": "2018-02-12",
+      "valid_to": "2018-03-26",
+      "rate": 7.5
+    },
+    {
+      "valid_from": "2018-03-26",
+      "valid_to": "2018-09-17",
+      "rate": 7.25
+    },
+    {
+      "valid_from": "2018-09-17",
+      "valid_to": "2018-12-17",
+      "rate": 7.5
+    },
+    {
+      "valid_from": "2018-12-17",
+      "valid_to": "2019-06-17",
+      "rate": 7.75
+    },
+    {
+      "valid_from": "2019-06-17",
+      "valid_to": "2019-07-29",
+      "rate": 7.5
+    },
+    {
+      "valid_from": "2019-07-29",
+      "valid_to": "2019-09-09",
+      "rate": 7.25
+    },
+    {
+      "valid_from": "2019-09-09",
+      "valid_to": "2019-10-28",
+      "rate": 7.0
+    },
+    {
+      "valid_from": "2019-10-28",
+      "valid_to": "2019-12-16",
+      "rate": 6.5
+    },
+    {
+      "valid_from": "2019-12-16",
+      "valid_to": "2020-02-10",
+      "rate": 6.25
+    },
+    {
+      "valid_from": "2020-02-10",
+      "valid_to": "2020-04-27",
+      "rate": 6.0
+    },
+    {
+      "valid_from": "2020-04-27",
+      "valid_to": "2020-06-22",
+      "rate": 5.5
+    },
+    {
+      "valid_from": "2020-06-22",
+      "valid_to": "2020-07-27",
+      "rate": 4.5
+    },
+    {
+      "valid_from": "2020-07-27",
+      "valid_to": "2021-03-22",
+      "rate": 4.25
+    },
+    {
+      "valid_from": "2021-03-22",
+      "valid_to": "2021-04-26",
+      "rate": 4.5
+    },
+    {
+      "valid_from": "2021-04-26",
+      "valid_to": "2021-06-15",
+      "rate": 5.0
+    },
+    {
+      "valid_from": "2021-06-15",
+      "valid_to": "2021-07-26",
+      "rate": 5.5
+    },
+    {
+      "valid_from": "2021-07-26",
+      "valid_to": "2021-09-13",
+      "rate": 6.5
+    },
+    {
+      "valid_from": "2021-09-13",
+      "valid_to": "2021-10-25",
+      "rate": 6.75
+    },
+    {
+      "valid_from": "2021-10-25",
+      "valid_to": "2021-12-20",
+      "rate": 7.5
+    },
+    {
+      "valid_from": "2021-12-20",
+      "valid_to": "2022-02-14",
+      "rate": 8.5
+    },
+    {
+      "valid_from": "2022-02-14",
+      "valid_to": "2022-02-28",
+      "rate": 9.5
+    },
+    {
+      "valid_from": "2022-02-28",
+      "valid_to": "2022-04-11",
+      "rate": 20.0
+    },
+    {
+      "valid_from": "2022-04-11",
+      "valid_to": "2022-05-04",
+      "rate": 17.0
+    },
+    {
+      "valid_from": "2022-05-04",
+      "valid_to": "2022-05-27",
+      "rate": 14.0
+    },
+    {
+      "valid_from": "2022-05-27",
+      "valid_to": "2022-06-14",
+      "rate": 11.0
+    },
+    {
+      "valid_from": "2022-06-14",
+      "valid_to": "2022-07-25",
+      "rate": 9.5
+    },
+    {
+      "valid_from": "2022-07-25",
+      "valid_to": "2022-09-19",
+      "rate": 8.0
+    },
+    {
+      "valid_from": "2022-09-19",
+      "valid_to": "2023-07-24",
+      "rate": 7.5
+    },
+    {
+      "valid_from": "2023-07-24",
+      "valid_to": "2023-08-15",
+      "rate": 8.5
+    },
+    {
+      "valid_from": "2023-08-15",
+      "valid_to": "2023-09-18",
+      "rate": 12.0
+    },
+    {
+      "valid_from": "2023-09-18",
+      "valid_to": "2023-10-30",
+      "rate": 13.0
+    },
+    {
+      "valid_from": "2023-10-30",
+      "valid_to": "2023-12-18",
+      "rate": 15.0
+    },
+    {
+      "valid_from": "2023-12-18",
+      "valid_to": "2024-07-29",
+      "rate": 16.0
+    },
+    {
+      "valid_from": "2024-07-29",
+      "valid_to": "2024-09-16",
+      "rate": 18.0
+    },
+    {
+      "valid_from": "2024-09-16",
+      "valid_to": "2024-10-28",
+      "rate": 19.0
+    },
+    {
+      "valid_from": "2024-10-28",
+      "valid_to": "2025-06-09",
+      "rate": 21.0
+    },
+    {
+      "valid_from": "2025-06-09",
+      "valid_to": "2025-07-28",
+      "rate": 20.0
+    },
+    {
+      "valid_from": "2025-07-28",
+      "valid_to": "2025-09-15",
+      "rate": 18.0
+    },
+    {
+      "valid_from": "2025-09-15",
+      "valid_to": "2025-10-27",
+      "rate": 17.0
+    },
+    {
+      "valid_from": "2025-10-27",
+      "valid_to": "2025-12-22",
+      "rate": 16.5
+    },
+    {
+      "valid_from": "2025-12-22",
+      "valid_to": "2026-02-16",
+      "rate": 16.0
+    },
+    {
+      "valid_from": "2026-02-16",
+      "valid_to": "2026-03-23",
+      "rate": 15.5
+    },
+    {
+      "valid_from": "2026-03-23",
+      "valid_to": "2026-04-27",
+      "rate": 15.0
+    },
+    {
+      "valid_from": "2026-04-27",
+      "valid_to": "2026-06-22",
+      "rate": 14.5
+    },
+    {
+      "valid_from": "2026-06-22",
+      "valid_to": "2026-07-27",
+      "rate": 14.25
+    },
+    {
+      "valid_from": "2026-07-27",
+      "valid_to": null,
+      "rate": 14.0
+    }
+  ]
+}

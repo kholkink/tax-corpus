@@ -379,6 +379,85 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "strict": True,
     },
     {
+        "name": "compute_penalty",
+        "description": "Пени по ст. 75 НК на сумму недоимки за период просрочки (по день уплаты "
+                       "включительно) с ключевой ставкой ЦБ по дням; для организаций — правила "
+                       "1/300 и 1/150 по периодам (п. 4, 5, 5.1 ст. 75). Возвращает сумму, шаги по "
+                       "сегментам ставки и unit_id применённых пунктов.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "amount": {"type": "number", "description": "недоимка, руб."},
+                "due_date": {"type": "string", "description": "срок уплаты YYYY-MM-DD"},
+                "paid_date": {"type": "string", "description": "дата уплаты YYYY-MM-DD"},
+                "taxpayer": {"type": "string", "enum": ["organization", "individual"]},
+            },
+            "required": ["amount", "due_date", "paid_date", "taxpayer"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "name": "compute_fine",
+        "description": "Штраф: ст. 119 (5 % в месяц, 30 % max, 1000 руб. min; нужны due_date и "
+                       "actual_date), ст. 122 (20 %), 122_willful (40 %), ст. 126 (200 руб. × documents); "
+                       "смягчающие — уменьшение не менее чем вдвое (п. 3 ст. 114), повторность — +100 % "
+                       "(п. 4 ст. 114).",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "article": {"type": "string", "enum": ["119", "122", "122_willful", "126"]},
+                "base": {"type": "number", "description": "неуплаченная сумма, руб. (для 119/122)"},
+                "due_date": {"type": ["string", "null"]},
+                "actual_date": {"type": ["string", "null"]},
+                "documents": {"type": "integer", "minimum": 0},
+                "mitigating": {"type": "array", "items": {"type": "string"}},
+                "aggravating": {"type": "boolean"},
+                "reduction_factor": {"type": "number", "minimum": 2, "maximum": 10},
+            },
+            "required": ["article", "base", "due_date", "actual_date", "documents", "mitigating",
+                         "aggravating", "reduction_factor"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "name": "appeal_deadlines",
+        "description": "Сроки процедуры: возражения на акт (месяц, п. 6 ст. 100), вступление решения в "
+                       "силу и апелляция (п. 9 ст. 101, п. 2 ст. 139.1), жалоба на вступившее решение "
+                       "(год, ст. 139), жалоба в ФНС (3 месяца). Укажи известные даты, остальные — null.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "act_received": {"type": ["string", "null"]},
+                "decision_received": {"type": ["string", "null"]},
+                "decision_date": {"type": ["string", "null"]},
+                "complaint_decision_date": {"type": ["string", "null"]},
+            },
+            "required": ["act_received", "decision_received", "decision_date", "complaint_decision_date"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "name": "limitation_status",
+        "description": "Истёк ли срок давности привлечения к ответственности (3 года, ст. 113) к дате "
+                       "решения. Для ст. 120, 122, 129.3, 129.5 срок идёт со следующего дня после "
+                       "окончания налогового периода (period_end), иначе — со дня правонарушения.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "decision_date": {"type": "string"},
+                "offense_date": {"type": ["string", "null"]},
+                "article": {"type": ["string", "null"], "description": "например 122"},
+                "period_end": {"type": ["string", "null"]},
+            },
+            "required": ["decision_date", "offense_date", "article", "period_end"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
         "name": "compute_deadline",
         "description": "Срок по ст. 6.1 НК от даты события: дни (рабочие или календарные), "
                        "месяцы, кварталы, годы; учитывает перенос с выходного. Возвращает дату "
@@ -396,6 +475,32 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "strict": True,
     },
 ]
+
+
+def _d(value):
+    return date.fromisoformat(value) if value else None
+
+
+def run_calculator(name: str, args: dict, calendar: ProductionCalendar | None = None) -> dict:
+    """Калькуляторы F5 (calculators.py) как инструменты агента / API."""
+    from . import calculators as C
+    if name == "compute_penalty":
+        r = C.compute_penalty(float(args["amount"]), _d(args["due_date"]), _d(args["paid_date"]),
+                              args.get("taxpayer") or "organization")
+    elif name == "compute_fine":
+        r = C.compute_fine(args["article"], float(args.get("base") or 0), _d(args.get("due_date")),
+                           _d(args.get("actual_date")), int(args.get("documents") or 0),
+                           args.get("mitigating") or None, bool(args.get("aggravating")),
+                           float(args.get("reduction_factor") or 2.0))
+    elif name == "appeal_deadlines":
+        r = C.appeal_deadlines(_d(args.get("act_received")), _d(args.get("decision_received")),
+                               _d(args.get("decision_date")), _d(args.get("complaint_decision_date")), calendar)
+    elif name == "limitation_status":
+        r = C.limitation_status(_d(args.get("offense_date")), _d(args["decision_date"]), args.get("article"),
+                                _d(args.get("period_end")), calendar)
+    else:
+        raise ValueError(f"неизвестный калькулятор {name}")
+    return r.to_dict()
 
 
 def execute_tool(corpus: Corpus, name: str, args: dict, as_of: str,
@@ -426,6 +531,8 @@ def execute_tool(corpus: Corpus, name: str, args: dict, as_of: str,
             if not result:
                 result = {"unit_id": args["unit_id"], "documents": [],
                           "note": "в корпусе нет разъяснений по этой норме на дату"}
+        elif name in ("compute_penalty", "compute_fine", "appeal_deadlines", "limitation_status"):
+            result = run_calculator(name, args, calendar)
         elif name == "compute_deadline":
             r = compute_deadline(date.fromisoformat(args["start"]), int(args["amount"]),
                                  args["unit"], calendar)
