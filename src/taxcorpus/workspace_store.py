@@ -187,3 +187,25 @@ def subscriptions_for(conn, workspace_id: int) -> list[str]:
         "SELECT DISTINCT jsonb_array_elements_text(sources) AS src FROM workspace_file "
         "WHERE workspace_id = %s ORDER BY 1", (workspace_id,)).fetchall()
     return [r["src"] for r in rows]
+
+
+def sync_users(conn, store) -> dict:
+    """Зеркало config/users.json (P5): app_user, api_token (только sha256), workspace_member."""
+    d = store.data
+    with conn.transaction():
+        for u in d["users"]:
+            conn.execute(
+                "INSERT INTO app_user (user_id, email, name, admin, created_at) VALUES (%s, %s, %s, %s, %s) "
+                "ON CONFLICT (user_id) DO UPDATE SET email = EXCLUDED.email, name = EXCLUDED.name, admin = EXCLUDED.admin",
+                (u["user_id"], u["email"], u["name"], bool(u.get("admin")), u.get("created_at")))
+        for t in d["tokens"]:
+            conn.execute(
+                "INSERT INTO api_token (token_id, user_id, sha256, label, created_at, last_used_at, revoked) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (token_id) DO UPDATE SET "
+                "last_used_at = EXCLUDED.last_used_at, revoked = EXCLUDED.revoked",
+                (t["token_id"], t["user_id"], t["sha256"], t.get("label"), t.get("created_at"), t.get("last_used_at"), bool(t.get("revoked"))))
+        conn.execute("DELETE FROM workspace_member")
+        for m in d["members"]:
+            conn.execute("INSERT INTO workspace_member (slug, user_id, role, granted_at) VALUES (%s, %s, %s, %s)",
+                         (m["slug"], m["user_id"], m["role"], m.get("granted_at")))
+    return {"users": len(d["users"]), "tokens": len(d["tokens"]), "members": len(d["members"])}

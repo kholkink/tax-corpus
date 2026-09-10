@@ -39,6 +39,8 @@ src/taxcorpus/
   audit.py      — аудит документа (F1); workspace_store.py — зеркало метаданных дел в БД (P1)
   facts.py      — факты и таймлайн дела с дословными цитатами, сроки из фактов (F6);
   providers.py  — профили провайдера модели (P4); redact.py — маскировка ПДн для облака (F9)
+  positions.py  — карта позиций по норме (F4); templates.py / export.py — шаблоны и DOCX (F7)
+  rerank.py     — кросс-энкодер над гибридом (F13); auth.py — пользователи, токены, роли (P5)
   jobs.py       — задачи и расписание (P3): краулеры, load_docs с событиями, check_bank_editions,
                   embed, snapshot, eval_search, eval_agent, daily; журнал job_run
   api.py        — FastAPI: /units, /search, /resolve, /parameters, /terms, /interpretations,
@@ -182,6 +184,17 @@ python -m taxcorpus workspace add-fact --slug delo1 --kind event --value 27.03.2
 python -m taxcorpus workspace confirm-fact --slug delo1 --id 2
 python -m taxcorpus workspace timeline --slug delo1
 python -m taxcorpus workspace deadlines --slug delo1             # сроки со ссылками на нормы -> задачи
+
+# реранкер и pgvector (F13): TAXCORPUS_RERANK=1 включает кросс-энкодер BAAI/bge-reranker-v2-m3
+# над top-30 гибрида (на CPU 3–5 с на запрос — для GPU/прода или оценки: scripts/eval_search.py --rerank 1);
+# python -m taxcorpus embed --to-db кладёт e5-векторы в unit_embedding (pgvector, миграция 006),
+# DbCorpus сам переключается на pgvector, если таблица заполнена; без pgvector — npz-индекс.
+
+# развёртывание и доступ (P7, P5): docker compose up -d (pgvector/pgvector:pg16 + api + scheduler),
+# бэкапы scripts/backup.sh / restore.sh — см. docs/deploy.md. Пользователи и роли в делах
+# (viewer / editor / owner, TAXCORPUS_AUTH=on, токены Bearer tc_…, реестр config/users.json):
+python -m taxcorpus users add --email anna@firm.ru --name "Анна" && python -m taxcorpus users token --email anna@firm.ru
+python -m taxcorpus users grant --slug delo1 --email anna@firm.ru --role editor
 
 # шаблоны документов и DOCX (F7): templates/*.md (возражения на акт, апелляционная жалоба, ответ на
 # требование, меморандум) с плейсхолдерами {{facts.<роль>|запасное}}, {{manifest.client}}, {{deadlines.<ключ>}}
