@@ -48,6 +48,11 @@ class UnitIndex:
         self.parent_of: dict[str, str] = {
             uid: r["parent_unit_id"] for uid, r in self.units.items() if r["parent_unit_id"]
         }
+        # дети в порядке документа (records идут в порядке документа)
+        self.children: dict[str, list[str]] = defaultdict(list)
+        for r in records:
+            if r.get("parent_unit_id"):
+                self.children[r["parent_unit_id"]].append(r["unit_id"])
         # варианты номеров для единиц каждого вида; неоднозначные отбрасываются
         self._variants: dict[tuple[str, str], dict[str, set[str]]] = defaultdict(
             lambda: defaultdict(set))
@@ -96,6 +101,35 @@ class UnitIndex:
         if len(matched) == 1:
             return next(iter(matched)), "variant"
         return None
+
+    def _lines(self, unit_id: str) -> list[str]:
+        """Строки единицы в юридическом счёте абзацев: собственные абзацы, затем
+        каждая строка каждого подпункта (подпункт = абзац, его абзацы — следующие)."""
+        lines: list[str] = []
+        for child in self.children.get(unit_id, []):
+            kind = self.units[child]["kind"]
+            if kind == "paragraph":
+                lines.append(child)
+            elif kind == "subpoint":
+                sub_lines = [c for c in self.children.get(child, [])
+                             if self.units[c]["kind"] == "paragraph"]
+                lines.append(child)  # первая строка подпункта — сам подпункт
+                lines.extend(sub_lines[1:])
+        return lines
+
+    def _paragraph(self, unit_id: str, depth: str, ordinal: int) -> Resolution:
+        """«Абзац N» единицы: собственный абзац, иначе — строка подпункта (в юридической
+        технике подпункты «1)…» считаются абзацами пункта)."""
+        candidate = f"{unit_id}.ab{ordinal}"
+        if self.exists(candidate):
+            return Resolution(candidate, "resolved", "paragraph")
+        lines = self._lines(unit_id)
+        if 0 < ordinal <= len(lines):
+            hit = lines[ordinal - 1]
+            return Resolution(hit, "resolved", "paragraph",
+                              f"абзац {ordinal} = {self.units[hit]['label']}")
+        return Resolution(unit_id, "partial", depth,
+                          f"абзац {ordinal} в {unit_id} не найден")
 
     def resolve_reference(self, target: dict, from_unit_id: str) -> Resolution:
         if target.get("type") == "act":
@@ -159,11 +193,7 @@ class UnitIndex:
             unit_id, depth = hit[0], "subpoint"
 
         if target.get("paragraph_ordinal"):
-            candidate = f"{unit_id}.ab{target['paragraph_ordinal']}"
-            if self.exists(candidate):
-                return Resolution(candidate, "resolved", "paragraph")
-            return Resolution(unit_id, "partial", depth,
-                              f"абзац {target['paragraph_ordinal']} в {unit_id} не найден")
+            return self._paragraph(unit_id, depth, int(target["paragraph_ordinal"]))
 
         return Resolution(unit_id, "resolved", depth)
 

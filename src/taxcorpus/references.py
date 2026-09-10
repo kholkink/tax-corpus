@@ -19,11 +19,14 @@ RE_NO = r"№[^\S\r\n]*"  # знак номера с необязательны�
 RE_AGNUM = r"[0-9а-яёa-z@/\-]+"  # номер ведомственного акта: «ММВ-7-6/398@»
 RE_NUM_FIND = re.compile(RE_NUM)
 
-# координатный список номеров: «1 и 3», «1, 2 и 4»
+# элемент списка — номер или диапазон: «3», «1 - 3», «2.1 - 2.4»
+RE_NUM_ITEM = rf"{RE_NUM}(?:[^\S\r\n]*[-–—][^\S\r\n]*{RE_NUM})?"
+# координатный список: «1 и 3», «1, 2 и 4», «1 - 3 и 5»
 RE_NUM_LIST = (
-    rf"(?:{RE_NUM}(?:[^\S\r\n]*,[^\S\r\n]*{RE_NUM})*"
-    rf"[^\S\r\n]*(?:и|или)[^\S\r\n]*{RE_NUM}|{RE_NUM})"
+    rf"(?:{RE_NUM_ITEM}(?:[^\S\r\n]*,[^\S\r\n]*{RE_NUM_ITEM})*"
+    rf"[^\S\r\n]*(?:и|или)[^\S\r\n]*{RE_NUM_ITEM}|{RE_NUM_ITEM})"
 )
+RE_NUM_ITEM_FIND = re.compile(RE_NUM_ITEM)
 RE_ROMAN = r"[ivxlcdm]{1,6}\b"  # номер раздела — римские цифры
 
 # слова-маркеры внутренних ссылок с падежными окончаниями
@@ -42,13 +45,19 @@ _RE_ORDINAL = (
     r"|восемнадцат|девятнадцат|тридцат|двадцат|десят|девят|восьм|седьм|шест|пят"
     r"|четвёрт|четверт|трет|втор|перв)[а-яё]+"
 )
+# список порядковых: «втором и третьем», «втором - четвертом», «первом, третьем и пятом»
+_RE_ORDINAL_ITEM = rf"{_RE_ORDINAL}(?:[^\S\r\n]*[-–—][^\S\r\n]*{_RE_ORDINAL})?"
+_RE_ORDINAL_LIST = (
+    rf"(?:{_RE_ORDINAL_ITEM}(?:[^\S\r\n]*,[^\S\r\n]*{_RE_ORDINAL_ITEM})*"
+    rf"[^\S\r\n]*(?:и|или)[^\S\r\n]*{_RE_ORDINAL_ITEM}|{_RE_ORDINAL_ITEM})"
+)
 
 # цепочка внутренней ссылки; в тексте НК компоненты идут от частного к общему:
 # «подпунктом 1 пункта 1 статьи 23», «абзаце втором пункта 1 статьи 346.19»
 RE_INTERNAL = re.compile(
     r"(?<!\w)(?=подпункт|абзац|пункт|стат|глав|раздел)"
     rf"(?:(?P<sub>{_W_SUB}){RE_WS}(?P<sub_num>{RE_NUM_LIST}))?"
-    rf"(?:[^\S\r\n]*(?P<par>{_W_PAR}){RE_WS}(?P<par_ord>{_RE_ORDINAL}))?"
+    rf"(?:[^\S\r\n]*(?P<par>{_W_PAR}){RE_WS}(?P<par_ord>{_RE_ORDINAL_LIST}))?"
     rf"(?:[^\S\r\n]*(?P<pnt>{_W_PNT}){RE_WS}(?P<pnt_num>{RE_NUM_LIST}))?"
     rf"(?:[^\S\r\n]*(?P<art>{_W_ART}){RE_WS}(?P<art_num>{RE_NUM_LIST}))?"
     rf"(?:[^\S\r\n]*(?P<chap>{_W_CHP}){RE_WS}(?P<chap_num>{RE_NUM}))?"
@@ -140,8 +149,22 @@ def _reference(unit_id: str, kind: str, raw_citation: str, target: dict) -> dict
     }
 
 
+def _expand_range(start: str, end: str, limit: int = 30) -> list[str]:
+    """«1 - 3» -> [1, 2, 3]; дробные или слишком длинные диапазоны — только концы."""
+    if start.isdigit() and end.isdigit() and 0 < int(end) - int(start) <= limit:
+        return [str(n) for n in range(int(start), int(end) + 1)]
+    return [start, end]
+
+
 def _numbers(fragment: str | None) -> list[str]:
-    return RE_NUM_FIND.findall(fragment) if fragment else []
+    """Список/диапазон номеров -> плоский список: «1, 2 - 4 и 7» -> [1, 2, 3, 4, 7]."""
+    if not fragment:
+        return []
+    out: list[str] = []
+    for item in RE_NUM_ITEM_FIND.findall(fragment):
+        nums = RE_NUM_FIND.findall(item)
+        out.extend(_expand_range(nums[0], nums[1]) if len(nums) == 2 else nums)
+    return out
 
 
 def _stem_value(word: str) -> int | None:
@@ -165,6 +188,24 @@ def _ordinal_value(word: str | None) -> int | None:
     return _stem_value(w)
 
 
+_RE_ORDINAL_FIND = re.compile(_RE_ORDINAL, re.IGNORECASE)
+
+
+def _ordinal_values(fragment: str | None) -> list[int]:
+    """Список/диапазон порядковых -> числа: «втором - четвертом и шестом» -> [2, 3, 4, 6]."""
+    if not fragment:
+        return []
+    out: list[int] = []
+    for item in re.split(r"[^\S\r\n]*,[^\S\r\n]*|[^\S\r\n]+(?:и|или)[^\S\r\n]+", fragment):
+        words = _RE_ORDINAL_FIND.findall(item)
+        values = [v for v in (_ordinal_value(w) for w in words) if v is not None]
+        if len(values) == 2 and re.search(r"[-–—]", item) and 0 < values[1] - values[0] <= 30:
+            out.extend(range(values[0], values[1] + 1))
+        else:
+            out.extend(values)
+    return out
+
+
 def _internal_records(unit_id: str, match: re.Match) -> list[dict]:
     numbers = {
         "section": [match.group("sec_num").upper()] if match.group("sec_num") else [],
@@ -173,19 +214,19 @@ def _internal_records(unit_id: str, match: re.Match) -> list[dict]:
         "point": _numbers(match.group("pnt_num")),
         "subpoint": _numbers(match.group("sub_num")),
     }
-    ordinal = _ordinal_value(match.group("par_ord"))
+    ordinals = _ordinal_values(match.group("par_ord"))
     present = [key for key in _UNIT_ORDER if numbers[key]]
-    if not present and ordinal is None:
+    if not present and not ordinals:
         return []
     combos: list[dict] = [{}]
     for key in present:
         combos = [{**combo, key: value} for combo in combos for value in numbers[key]]
+    if ordinals:
+        combos = [{**combo, "paragraph_ordinal": o} for combo in combos for o in ordinals]
     rel = _REL_KIND.get((match.group("rel") or "").lower())
     records = []
     for combo in combos:
         target = {"type": "unit", **combo}
-        if ordinal is not None:
-            target["paragraph_ordinal"] = ordinal
         if rel and rel != "act":
             target["relative_to"] = rel  # база контекстной ссылки — предок источника этого вида
         records.append(_reference(unit_id, "internal_citation", match.group(0), target))
