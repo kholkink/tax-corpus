@@ -48,6 +48,8 @@ def explain_hit(row: dict, query: str, text: str) -> dict:
         parts.append("все слова запроса" if row.get("pass") == "strict" else "часть слов запроса")
     if "dense" in sources:
         parts.append("близко по смыслу")
+    if "rerank" in sources:
+        parts.append("подтверждено реранкером")
     why = "; ".join(parts) or "лексическое совпадение"
     if terms:
         why += " — совпали: " + ", ".join(terms)
@@ -66,11 +68,13 @@ class HybridSearch:
     """
 
     def __init__(self, records: dict[str, dict], verifier, dense: DenseIndex | None = None,
-                 depth: int = 30):
+                 depth: int = 30, reranker=None):
+        from .rerank import Reranker
         self.records = records
         self.verifier = verifier
         self.dense = dense
         self.depth = depth
+        self.reranker = reranker if reranker is not None else Reranker.from_env()
 
     @property
     def enabled(self) -> bool:
@@ -90,6 +94,14 @@ class HybridSearch:
         fused = rrf([[r["unit_id"] for r in lex_rows], [uid for uid, _ in dense_hits]])
         by_lex = {r["unit_id"]: r for r in lex_rows}
         dense_score = dict(dense_hits)
+        reranked: dict[str, float] = {}
+        if self.reranker is not None and self.reranker.ready and fused:
+            depth = getattr(self.reranker, "depth", self.depth) or self.depth
+            cands = [(uid, self._text(uid)[:2000]) for uid, _ in fused[:depth]]
+            order = self.reranker.rerank(query, cands)
+            if order:
+                reranked = dict(order)
+                fused = [(uid, sc) for uid, sc in order] + [(uid, sc) for uid, sc in fused if uid not in reranked]
         out = []
         for uid, score in fused[:limit]:
             row = by_lex.get(uid)
@@ -102,6 +114,9 @@ class HybridSearch:
                 row = dict(row)
             row["rank"] = round(score, 4)
             row["sources"] = [s for s, ok in (("lexical", uid in by_lex), ("dense", uid in dense_score)) if ok]
+            if uid in reranked:
+                row["sources"].append("rerank")
+                row["rerank_score"] = round(reranked[uid], 4)
             out.append(explain_hit(row, query, self._text(uid)))
         return out
 
@@ -283,6 +298,13 @@ class DbCorpus:
         self.conn = conn
         self._local = LocalCorpus(data_dir, parameters_path=None)
         self.hybrid = self._local.hybrid
+        try:  # прод: векторы в pgvector (unit_embedding) вместо npz в памяти
+            from .embeddings import PgDenseIndex
+            pg = PgDenseIndex(conn)
+            if pg.ready:
+                self.hybrid = HybridSearch(self._local.units, self._local.verifier(), pg)
+        except Exception:  # noqa: BLE001 — без pgvector остаётся npz-индекс
+            pass
 
     def verifier(self) -> CitationVerifier:
         return self._local.verifier()

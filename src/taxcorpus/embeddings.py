@@ -115,3 +115,55 @@ def rrf(rankings: list[list[str]], k: int = 60) -> list[tuple[str, float]]:
         for rank, uid in enumerate(ranking, start=1):
             scores[uid] = scores.get(uid, 0.0) + 1.0 / (k + rank)
     return sorted(scores.items(), key=lambda kv: -kv[1])
+
+
+# --- pgvector (прод): та же матрица в таблице unit_embedding ------------------------------
+
+def has_pgvector(conn) -> bool:
+    row = conn.execute("SELECT 1 FROM pg_extension WHERE extname = 'vector'").fetchone()
+    return bool(row) and bool(conn.execute("SELECT to_regclass('unit_embedding') IS NOT NULL AS ok").fetchone()["ok"])
+
+
+def load_embeddings_db(conn, index: DenseIndex, batch: int = 500) -> int:
+    """npz-индекс -> unit_embedding (полная замена строк этой модели). Нужен pgvector."""
+    if index.matrix is None and not index.load():
+        raise RuntimeError("индекс не построен: python -m taxcorpus embed")
+    if not has_pgvector(conn):
+        raise RuntimeError("pgvector не установлен (миграция 006 пропустила таблицу)")
+    known = {r["unit_id"] for r in conn.execute("SELECT unit_id FROM unit").fetchall()}
+    dim = int(index.matrix.shape[1])
+    rows = [(uid, index.model_name, dim, "[" + ",".join(f"{x:.6f}" for x in vec) + "]")
+            for uid, vec in zip(index.ids, index.matrix) if uid in known]
+    with conn.transaction():
+        conn.execute("DELETE FROM unit_embedding WHERE model = %s", (index.model_name,))
+        with conn.cursor() as cur:
+            for i in range(0, len(rows), batch):
+                cur.executemany("INSERT INTO unit_embedding (unit_id, model, dim, vec) VALUES (%s, %s, %s, %s::vector)",
+                                rows[i:i + batch])
+    return len(rows)
+
+
+class PgDenseIndex(DenseIndex):
+    """Семантический поиск через pgvector: косинус по unit_embedding вместо матрицы в памяти."""
+
+    def __init__(self, conn, model_name: str = DEFAULT_MODEL):
+        super().__init__(model_name)
+        self.conn = conn
+
+    @property
+    def ready(self) -> bool:
+        try:
+            return has_pgvector(self.conn) and bool(self.conn.execute(
+                "SELECT 1 FROM unit_embedding WHERE model = %s LIMIT 1", (self.model_name,)).fetchone())
+        except Exception:  # noqa: BLE001
+            return False
+
+    def search(self, query: str, limit: int = 20, allowed: set[str] | None = None) -> list[tuple[str, float]]:
+        q = self.encode_queries([query])[0]
+        vec = "[" + ",".join(f"{x:.6f}" for x in q) + "]"
+        rows = self.conn.execute(
+            "SELECT unit_id, 1 - (vec <=> %s::vector) AS cos FROM unit_embedding WHERE model = %s "
+            "ORDER BY vec <=> %s::vector LIMIT %s",
+            (vec, self.model_name, vec, limit * 4 if allowed is not None else limit)).fetchall()
+        out = [(r["unit_id"], float(r["cos"])) for r in rows if allowed is None or r["unit_id"] in allowed]
+        return out[:limit]

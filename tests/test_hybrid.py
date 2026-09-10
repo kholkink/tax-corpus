@@ -55,3 +55,30 @@ def test_search_explains_hits_with_matched_terms():
     corpus.hybrid = HybridSearch(corpus.units, corpus.verifier(), None)
     lex = corpus.search("камеральная проверка", "2026-09-10", 3)
     assert lex and all("matched_terms" in r and r["why"] for r in lex) and "sources" not in lex[0]
+
+
+class FakeReranker:
+    ready = True
+    depth = 30
+
+    def rerank(self, query, candidates, top_k=None):
+        # «знает», что п. 1 ст. 88 — лучший ответ, остальное — по длине текста
+        return sorted(((uid, 1.0 if uid == "nk1.ch14.art88.p1" else 0.1) for uid, _ in candidates), key=lambda x: -x[1])
+
+
+def test_reranker_reorders_hybrid_top_and_is_explained(monkeypatch):
+    _, records, _ = parse_document(TEXT, "nk1")
+    corpus = LocalCorpus.from_records(records, {"nk1": "2026-08-04"})
+    dense = FakeDense([("nk1.ch14.art88.p2", 0.9), ("nk1.ch14.art88.p1", 0.5)])
+    corpus.hybrid = HybridSearch(corpus.units, corpus.verifier(), dense, reranker=FakeReranker())
+    rows = corpus.search("срок камеральной проверки", "2026-09-10", 5)
+    assert rows[0]["unit_id"] == "nk1.ch14.art88.p1" and "rerank" in rows[0]["sources"]
+    assert "реранкером" in rows[0]["why"] and rows[0]["rerank_score"] == 1.0
+    # без переменной окружения реранкер не создаётся; с TAXCORPUS_RERANK=0 — тоже
+    monkeypatch.delenv("TAXCORPUS_RERANK", raising=False)
+    assert HybridSearch(corpus.units, corpus.verifier(), dense).reranker is None
+    monkeypatch.setenv("TAXCORPUS_RERANK", "0")
+    assert HybridSearch(corpus.units, corpus.verifier(), dense).reranker is None
+    monkeypatch.setenv("TAXCORPUS_RERANK", "my/model")
+    rr = HybridSearch(corpus.units, corpus.verifier(), dense).reranker
+    assert rr is not None and rr.model_name == "my/model"
