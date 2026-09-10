@@ -320,3 +320,12 @@ def test_paragraph_notes_move_to_paragraph_units():
     assert repeal_dates(rows) == {"nk1.art12.p1.ab1": "2020-01-01"}
     sp1 = [r for r in rows if r["target_unit_id"] == "nk1.art12.p2.sp1"]
     assert sp1[0]["scope"] == "child"
+
+
+def test_procedural_codes_and_abbreviations_are_foreign():
+    for text in ("в силу статьи 71 Арбитражного процессуального кодекса Российской Федерации",
+                 "согласно части 1 статьи 65 АПК РФ", "по правилам статьи 395 ГК РФ",
+                 "статьи 56 Гражданского процессуального кодекса"):
+        recs = extract_references("u", text)
+        assert recs and {r["kind"] for r in recs} == {"external_act_unit"}, text
+    assert extract_references("u", "пункт 2 статьи 88 настоящего Кодекса")[0]["kind"] == "internal_citation"
