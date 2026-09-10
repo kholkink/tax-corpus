@@ -211,9 +211,16 @@ def search_interpretations(q: str, as_of: str | None = None,
     return corpus().search_interpretations(q, _as_of(as_of), limit)
 
 
+@app.get("/parameters")
+def parameters(as_of: str | None = None, region: str | None = None, tax: str | None = None,
+               prefix: str | None = None) -> list[dict]:
+    """Параметры на дату по региону/налогу (F10)."""
+    return corpus().list_parameters(_as_of(as_of), region, tax, prefix)
+
+
 @app.get("/parameters/{name}")
-def parameter(name: str, as_of: str | None = None) -> dict:
-    row = corpus().get_parameter(name, _as_of(as_of))
+def parameter(name: str, as_of: str | None = None, region: str | None = None) -> dict:
+    row = corpus().get_parameter(name, _as_of(as_of), region)
     if row is None:
         raise HTTPException(404, f"параметр {name} не найден или не действует на {_as_of(as_of)}")
     return {"as_of": _as_of(as_of), **row}

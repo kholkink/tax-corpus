@@ -126,7 +126,8 @@ class Corpus(Protocol):
     def resolve_citation(self, citation: str, context_unit_id: str | None) -> dict: ...
     def search(self, query: str, as_of: str, limit: int) -> list[dict]: ...
     def list_amendments(self, unit_id: str, since: str | None) -> list[dict]: ...
-    def get_parameter(self, name: str, as_of: str) -> dict | None: ...
+    def get_parameter(self, name: str, as_of: str, region: str | None = None) -> dict | None: ...
+    def list_parameters(self, as_of: str, region: str | None = None, tax: str | None = None, prefix: str | None = None) -> list[dict]: ...
     def find_terms(self, query: str, as_of: str) -> list[dict]: ...
     def get_interpretations(self, unit_id: str, as_of: str, limit: int) -> list[dict]: ...
     def search_interpretations(self, query: str, as_of: str, limit: int) -> list[dict]: ...
@@ -269,15 +270,34 @@ class LocalCorpus:
                                        "amending_act_date", "effective_date", "raw_note")}
                 for a in rows]
 
-    def get_parameter(self, name: str, as_of: str) -> dict | None:
+    def get_parameter(self, name: str, as_of: str, region: str | None = None) -> dict | None:
+        """Региональное значение (если задан регион и есть строка с ним) имеет приоритет над федеральным."""
+        best = None
         for p in self.parameters:
-            if p["name"] != name:
+            if p["name"] != name or p.get("region") not in (None, region):
                 continue
             if (p.get("valid_from") or "") <= as_of and (not p.get("valid_to") or p["valid_to"] > as_of):
-                unit = self.get_unit(p["source_unit_id"], as_of)
-                return {**p, "source_text": unit["full_text"] if unit else None,
-                        "label": self.units[p["source_unit_id"]]["label"]}
-        return None
+                if best is None or (p.get("region") and not best.get("region")):
+                    best = p
+        if best is None:
+            return None
+        unit = self.get_unit(best["source_unit_id"], as_of)
+        return {**best, "source_text": unit["full_text"] if unit else None,
+                "label": self.units[best["source_unit_id"]]["label"]}
+
+    def list_parameters(self, as_of: str, region: str | None = None, tax: str | None = None,
+                        prefix: str | None = None) -> list[dict]:
+        out = []
+        for p in self.parameters:
+            if region is not None and p.get("region") not in (None, region):
+                continue
+            if tax and p.get("tax") != tax:
+                continue
+            if prefix and not p["name"].startswith(prefix):
+                continue
+            if (p.get("valid_from") or "") <= as_of and (not p.get("valid_to") or p["valid_to"] > as_of):
+                out.append({**p, "label": self.units.get(p["source_unit_id"], {}).get("label")})
+        return out
 
     def find_terms(self, query: str, as_of: str) -> list[dict]:
         norm = query.lower().replace("ё", "е")
@@ -324,8 +344,12 @@ class DbCorpus:
     def list_amendments(self, unit_id: str, since: str | None = None) -> list[dict]:
         return self.db.list_amendments(self.conn, unit_id, since)
 
-    def get_parameter(self, name: str, as_of: str) -> dict | None:
-        return self.db.get_parameter(self.conn, name, as_of)
+    def get_parameter(self, name: str, as_of: str, region: str | None = None) -> dict | None:
+        return self.db.get_parameter(self.conn, name, as_of, region)
+
+    def list_parameters(self, as_of: str, region: str | None = None, tax: str | None = None,
+                        prefix: str | None = None) -> list[dict]:
+        return self.db.list_parameters(self.conn, as_of, region, tax, prefix)
 
     def find_terms(self, query: str, as_of: str) -> list[dict]:
         return self.db.find_terms(self.conn, query, as_of)
@@ -418,8 +442,23 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                        "underpayment_fine_rate_willful, liability_limitation_period.",
         "input_schema": {
             "type": "object",
-            "properties": {"name": {"type": "string"}},
-            "required": ["name"],
+            "properties": {"name": {"type": "string"},
+                           "region": {"type": ["string", "null"], "description": "код субъекта РФ («77»): региональная ставка, если есть; иначе федеральная"}},
+            "required": ["name", "region"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "name": "list_regional_benefits",
+        "description": "Региональные ставки и льготы субъекта РФ (УСН, имущество, транспорт, земля, ПСН) на дату: "
+                       "значение, интервал, закон субъекта и якорь в тексте; если для региона данных нет — "
+                       "федеральные значения с пометкой. Регион дела берётся из его манифеста, если не задан.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"region": {"type": ["string", "null"]},
+                           "tax": {"type": ["string", "null"], "enum": ["usn", "property", "transport", "land", "psn", "profit", None]}},
+            "required": ["region", "tax"],
             "additionalProperties": False,
         },
         "strict": True,
@@ -650,9 +689,20 @@ def execute_tool(corpus: Corpus, name: str, args: dict, as_of: str,
         elif name == "list_amendments":
             result = corpus.list_amendments(args["unit_id"], args.get("since"))
         elif name == "get_parameter":
-            result = corpus.get_parameter(args["name"], as_of)
+            result = corpus.get_parameter(args["name"], as_of, args.get("region") or None)
             if result is None:
                 result = {"name": args["name"], "found": False}
+            elif args.get("region") and not result.get("region"):
+                result["note"] = f"для региона {args['region']} своей ставки в корпусе нет: показано федеральное значение"
+        elif name == "list_regional_benefits":
+            region = args.get("region") or None
+            rows = corpus.list_parameters(as_of, region, args.get("tax") or None)
+            regional = [r for r in rows if r.get("region")]
+            result = {"region": region, "tax": args.get("tax"), "parameters": rows if regional else rows,
+                      "regional_rows": len(regional)}
+            if not regional:
+                result["note"] = ("региональных параметров для этого субъекта в корпусе нет — показаны федеральные; "
+                                  "загрузка: python -m taxcorpus load-regions --file data/parameters/regional.json")
         elif name == "find_terms":
             result = corpus.find_terms(args["query"], as_of)
         elif name == "search_interpretations":
