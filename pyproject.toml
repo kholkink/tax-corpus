@@ -19,6 +19,10 @@ api = [
     "uvicorn>=0.29",
     "httpx>=0.27",
 ]
+semantic = [
+    "sentence-transformers>=3.0",
+    "numpy>=1.26",
+]
 
 [build-system]
 requires = ["setuptools>=68"]

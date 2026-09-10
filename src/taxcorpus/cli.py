@@ -292,14 +292,35 @@ def cmd_convert(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_embed(args: argparse.Namespace) -> int:
+    """Построить семантический индекс чанков (слой 4): data/index/<model>.npz."""
+    from .embeddings import DenseIndex
+
+    records = []
+    for path in sorted(Path(args.data_dir).glob("*_units.jsonl")):
+        records.extend(_read_jsonl(path))
+    index = DenseIndex(args.model)
+    n = index.build(records, max_chars=args.max_chars)
+    print(f"чанков: {n}; модель: {args.model}; файл: {index.path}")
+    return 0
+
+
 def cmd_search(args: argparse.Namespace) -> int:
-    """Полнотекстовый поиск по нормам (BM25-плечо гибридного поиска, слой 4)."""
+    """Поиск по нормам: лексический (ts_rank_cd) или гибридный с семантическим плечом (RRF)."""
     from .db import connect, search_units
 
     conn = connect(args.db_url)
     try:
-        rows = search_units(conn, args.query, args.as_of, limit=args.limit, kind=args.kind,
-                            chunks_only=not args.all_kinds)
+        if args.hybrid:
+            from .tools import DbCorpus
+            corpus = DbCorpus(conn, args.data_dir)
+            if not corpus.hybrid.enabled:
+                print("[warn] семантический индекс не построен (python -m taxcorpus embed) — "
+                      "только лексический поиск", file=sys.stderr)
+            rows = corpus.search(args.query, args.as_of, limit=args.limit)
+        else:
+            rows = search_units(conn, args.query, args.as_of, limit=args.limit, kind=args.kind,
+                                chunks_only=not args.all_kinds)
     finally:
         conn.close()
     if not rows:
@@ -523,8 +544,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_search.add_argument("--kind", default=None, help="фильтр по виду единицы: article|point|...")
     p_search.add_argument("--all-kinds", action="store_true",
                           help="искать по всем единицам, а не только по чанкам (пункт/подпункт)")
+    p_search.add_argument("--hybrid", action="store_true",
+                          help="лексический + семантический (RRF); нужен индекс: embed")
+    p_search.add_argument("--data-dir", default="data/processed")
     p_search.add_argument("--db-url", default=None)
     p_search.set_defaults(func=cmd_search)
+
+    p_embed = sub.add_parser("embed", help="построить семантический индекс чанков (extra [semantic])")
+    p_embed.add_argument("--model", default="intfloat/multilingual-e5-small")
+    p_embed.add_argument("--data-dir", default="data/processed")
+    p_embed.add_argument("--max-chars", type=int, default=2000)
+    p_embed.set_defaults(func=cmd_embed)
 
     p_diff = sub.add_parser("diff", help="история правок единицы за период")
     p_diff.add_argument("--id", required=True)
