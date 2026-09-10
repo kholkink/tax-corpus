@@ -125,6 +125,9 @@ def load_docs(ctx: JobContext) -> None:
     index = UnitIndex(records)
     edges = [e for d in docs for e in link_document(d, index)]
     load_documents_db(ctx.conn, docs, edges)
+    from .db import load_positions_db
+    from .positions import PositionStore
+    ctx.stats["positions"] = load_positions_db(ctx.conn, list(PositionStore(DATA / "interpretations" / "positions.jsonl").positions.values()))
     added = changed = 0
     for d in docs:
         cites = sorted({e["to_unit_id"] for e in edges if e["doc_id"] == d.doc_id})
@@ -138,6 +141,42 @@ def load_docs(ctx: JobContext) -> None:
                       new=d.status, cites=cites[:50])
     ctx.stats.update(documents=len(docs), edges=len(edges), added=added, status_changed=changed)
     ctx.say(f"документов {len(docs)}, рёбер {len(edges)}, новых {added}, сменили статус {changed}")
+
+
+@job("extract_positions", "позиции документов по нормам через модель (F4; платно: --limit N вызовов, --provider P)")
+def extract_positions(ctx: JobContext) -> None:
+    import argparse
+    from .interpretations import link_document, load_documents
+    from .positions import PositionStore, extract_positions as _extract
+    from .providers import choose, make_client
+    from .resolver import UnitIndex
+
+    ap = argparse.ArgumentParser(prog="extract_positions")
+    ap.add_argument("--limit", type=int, default=50)
+    ap.add_argument("--provider", default=None)
+    ap.add_argument("--model", default=None)
+    ap.add_argument("--kinds", default=None, help="через запятую: plenum,review,letter …")
+    args = ap.parse_args(ctx.argv or [])
+    provider = choose("standard", args.provider)
+    model = args.model or provider.model
+    docs = load_documents(DATA / "interpretations")
+    if args.kinds:
+        kinds = set(args.kinds.split(","))
+        docs = [d for d in docs if d.kind in kinds]
+    records = []
+    for p in sorted((DATA / "processed").glob("*_units.jsonl")):
+        with p.open(encoding="utf-8") as fh:
+            records.extend(json.loads(line) for line in fh if line.strip())
+    units = {r["unit_id"]: r for r in records}
+    index = UnitIndex(records)
+    edges = [e for d in docs for e in link_document(d, index)]
+    store = PositionStore(DATA / "interpretations" / "positions.jsonl")
+    stats = _extract(make_client(provider), model, docs, edges, units, store, limit=args.limit, log=ctx.say)
+    ctx.stats.update(stats, model=model, positions_total=len(store.positions))
+    if stats["added"]:
+        ctx.event("positions_extracted", added=stats["added"], model=model)
+    ctx.say(f"вызовов {stats['calls']}, позиций добавлено {stats['added']}, отклонено {stats['rejected']}, "
+            f"всего в реестре {len(store.positions)}; загрузка в БД — jobs run load_docs")
 
 
 def parse_edition_label(label: str) -> tuple[str | None, str | None]:
@@ -304,6 +343,7 @@ def history(conn, name: str | None = None, limit: int = 20) -> list[dict]:
 CRONTAB = """# tax-corpus: ежедневный конвейер в 03:00, ночная оценка в 04:00 (см. README)
 0 3 * * *  cd {root} && {python} -m taxcorpus jobs run daily >> reports/jobs.log 2>&1
 0 4 * * 1  cd {root} && {python} -m taxcorpus jobs run eval_agent -- --limit 30 >> reports/jobs.log 2>&1
+0 5 * * 0  cd {root} && {python} -m taxcorpus jobs run extract_positions -- --limit 200 >> reports/jobs.log 2>&1
 30 5 * * 1  cd {root} && {python} -m taxcorpus jobs run eval_search >> reports/jobs.log 2>&1
 45 5 * * 1  cd {root} && {python} -m taxcorpus jobs run accuracy >> reports/jobs.log 2>&1
 """

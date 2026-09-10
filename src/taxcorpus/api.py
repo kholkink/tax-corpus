@@ -105,11 +105,19 @@ def unit_card(unit_id: str, as_of: str | None = None) -> dict:
         raise HTTPException(404, f"единица {unit_id} не существует")
     amendments = c.list_amendments(unit_id, None)
     interpretations = c.get_interpretations(unit_id, d, 20)
+    positions = c.get_position_map(unit_id, d)
     return {"as_of": d, "unit_id": unit_id, "unit": unit, "in_force": unit is not None,
             "amendments": amendments, "interpretations": interpretations, "versions": versions,
-            "parameters": parameters,
+            "parameters": parameters, "positions": positions,
             "explain": {"amendments": len(amendments), "interpretations": len(interpretations),
-                        "versions": len(versions), "mandatory_letters": sum(1 for i in interpretations if i.get("mandatory"))}}
+                        "versions": len(versions), "mandatory_letters": sum(1 for i in interpretations if i.get("mandatory")),
+                        "positions": sum(positions["counts"].values()), "conflict": positions["conflict"]}}
+
+
+@app.get("/units/{unit_id}/positions")
+def unit_positions(unit_id: str, as_of: str | None = None) -> dict:
+    """Карта позиций по норме (F4): по stance, с приоритетом источников и цитатами."""
+    return corpus().get_position_map(unit_id, _as_of(as_of))
 
 
 @app.get("/resolve")

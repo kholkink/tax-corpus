@@ -21,6 +21,7 @@ from .citations import CitationVerifier
 from .deadlines import ProductionCalendar, compute_deadline
 from .embeddings import DenseIndex, rrf
 from .interpretations import InterpretationIndex, load_documents
+from .positions import PositionStore, position_map, positions_for_documents
 from .resolver import UnitIndex, resolve_citation
 from .terms import extract_terms
 
@@ -116,6 +117,7 @@ class Corpus(Protocol):
     def search_interpretations(self, query: str, as_of: str, limit: int) -> list[dict]: ...
     def verifier(self) -> CitationVerifier: ...
     def interpretations(self) -> InterpretationIndex: ...
+    def get_position_map(self, unit_id: str, as_of: str) -> dict: ...
 
 
 # --- офлайн-бэкенд -----------------------------------------------------------------
@@ -180,8 +182,27 @@ class LocalCorpus:
     def interpretations(self) -> InterpretationIndex:
         return self._interpretations
 
+    @property
+    def positions(self) -> PositionStore:
+        store = getattr(self, "_position_store", None)
+        if store is None:
+            store = PositionStore(self.data_dir.parent / "interpretations" / "positions.jsonl")
+            self._position_store = store
+        return store
+
+    def get_position_map(self, unit_id: str, as_of: str) -> dict:
+        docs = {d.doc_id: d.summary() for d in self.interpretations().docs.values()}
+        return position_map(unit_id, as_of, self.positions.for_unit(unit_id), docs,
+                            self.list_amendments(unit_id, None))
+
+    def _with_stances(self, rows: list[dict]) -> list[dict]:
+        stances = positions_for_documents(self.positions, [r["doc_id"] for r in rows])
+        for r in rows:
+            r["positions"] = stances.get(r["doc_id"], {})
+        return rows
+
     def get_interpretations(self, unit_id: str, as_of: str, limit: int = 10) -> list[dict]:
-        return self._interpretations.get_interpretations(unit_id, as_of, limit)
+        return self._with_stances(self._interpretations.get_interpretations(unit_id, as_of, limit))
 
     def search_interpretations(self, query: str, as_of: str, limit: int = 5) -> list[dict]:
         return self._interpretations.search(query, as_of, limit)
@@ -291,7 +312,18 @@ class DbCorpus:
         return self._local.interpretations()
 
     def get_interpretations(self, unit_id: str, as_of: str, limit: int = 10) -> list[dict]:
-        return self.db.get_interpretations(self.conn, unit_id, as_of, limit)
+        rows = self.db.get_interpretations(self.conn, unit_id, as_of, limit)
+        stances = self.db.positions_by_docs(self.conn, [r["doc_id"] for r in rows])
+        for r in rows:
+            r["positions"] = stances.get(r["doc_id"], {})
+        return rows
+
+    def get_position_map(self, unit_id: str, as_of: str) -> dict:
+        from .positions import Position
+        rows = self.db.get_positions(self.conn, unit_id)
+        positions = [Position(**{k: v for k, v in r.items() if k in Position.__dataclass_fields__}) for r in rows]
+        docs = self.db.documents_by_ids(self.conn, sorted({r["doc_id"] for r in rows}))
+        return position_map(unit_id, as_of, positions, docs, self.list_amendments(unit_id, None))
 
     def search_interpretations(self, query: str, as_of: str, limit: int = 5) -> list[dict]:
         return self.db.search_documents(self.conn, query, as_of, limit)
@@ -393,6 +425,21 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "unit_id": {"type": "string"},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
             },
+            "required": ["unit_id"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "name": "get_position_map",
+        "description": "Карта позиций по норме: что говорят о ней письма Минфина/ФНС, пленумы, обзоры и "
+                       "определения ВС, акты КС — сгруппировано по stance (pro_taxpayer / pro_authority / "
+                       "neutral), с приоритетом источников, датами, дословными цитатами и пометкой, если "
+                       "документ старше последней правки нормы. conflict = true — позиции расходятся: "
+                       "покажи обе стороны. Вызывай после get_unit, когда вопрос спорный.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"unit_id": {"type": "string"}},
             "required": ["unit_id"],
             "additionalProperties": False,
         },
@@ -567,6 +614,10 @@ def execute_tool(corpus: Corpus, name: str, args: dict, as_of: str,
             if not result:
                 result = {"unit_id": args["unit_id"], "documents": [],
                           "note": "в корпусе нет разъяснений по этой норме на дату"}
+        elif name == "get_position_map":
+            result = corpus.get_position_map(args["unit_id"], as_of)
+            if not any(result["counts"].values()):
+                result["note"] = "позиций по этой норме в реестре нет (документы не извлекались или не найдены)"
         elif name in ("compute_penalty", "compute_fine", "appeal_deadlines", "limitation_status"):
             result = run_calculator(name, args, calendar)
         elif name == "compute_deadline":

@@ -565,6 +565,61 @@ def get_interpretations(conn, unit_id: str, as_of_date: str, limit: int = 10) ->
     return rows[:limit]
 
 
+def documents_by_ids(conn, doc_ids: list[str]) -> dict[str, dict]:
+    if not doc_ids:
+        return {}
+    rows = conn.execute(
+        "SELECT doc_id, kind, agency, number, doc_date AS date, title, mandatory, status, source_url "
+        "FROM document WHERE doc_id = ANY(%s)", (doc_ids,)).fetchall()
+    return {r["doc_id"]: {**r, "date": str(r["date"])} for r in rows}
+
+
+# --- F4: позиции документов по нормам ------------------------------------------------
+
+def load_positions_db(conn, positions: list) -> int:
+    """Зеркало positions.jsonl: полная перезагрузка (только пары с известными документом и единицей)."""
+    with conn.transaction():
+        with conn.cursor() as cur:
+            known_docs = {r["doc_id"] for r in cur.execute("SELECT doc_id FROM document").fetchall()}
+            known_units = {r["unit_id"] for r in cur.execute("SELECT unit_id FROM unit").fetchall()}
+            cur.execute("DELETE FROM position")
+            rows = [p for p in positions if p.doc_id in known_docs and p.unit_id in known_units]
+            cur.executemany(
+                """
+                INSERT INTO position (position_id, doc_id, unit_id, stance, summary, quote, confidence,
+                                      extracted_by, model, verified, verified_by, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                [(p.position_id, p.doc_id, p.unit_id, p.stance, p.summary, p.quote, p.confidence,
+                  p.extracted_by, p.model, p.verified, p.verified_by, p.created_at) for p in rows])
+    return len(rows)
+
+
+def get_positions(conn, unit_id: str) -> list[dict]:
+    """Позиции по единице, её предкам в статье и потомкам (stance != none)."""
+    from .resolver import article_of_unit_id
+    article = article_of_unit_id(unit_id)
+    return conn.execute(
+        """
+        SELECT position_id, doc_id, unit_id, stance, summary, quote, confidence, extracted_by, model,
+               verified, verified_by, created_at
+        FROM position
+        WHERE stance <> 'none'
+          AND (unit_id = %s OR unit_id LIKE %s OR %s LIKE unit_id || '.%%' OR unit_id = %s)
+        """, (unit_id, unit_id + ".%", unit_id, article)).fetchall()
+
+
+def positions_by_docs(conn, doc_ids: list[str]) -> dict[str, dict]:
+    """doc_id -> {unit_id: stance} для обогащения get_interpretations."""
+    if not doc_ids:
+        return {}
+    out: dict[str, dict] = {}
+    for r in conn.execute("SELECT doc_id, unit_id, stance FROM position WHERE stance <> 'none' AND doc_id = ANY(%s)",
+                          (doc_ids,)).fetchall():
+        out.setdefault(r["doc_id"], {})[r["unit_id"]] = r["stance"]
+    return out
+
+
 def search_documents(conn, query: str, as_of_date: str, limit: int = 5) -> list[dict]:
     """Поиск по разъяснениям (отдельный индекс, слой 4): заголовок весомее текста."""
     expansions = expand_query(query)

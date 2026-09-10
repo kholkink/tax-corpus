@@ -138,3 +138,23 @@ def test_unit_versions_and_parameters_for_unit():
     assert versions and versions[-1]["current"] and versions[-1]["chars"] > 0
     assert any(p["name"] == "vat_rate_general" for p in params) and all(p["source_unit_id"].startswith("nk2.ch21.art164") for p in params)
     assert [p["name"] for p in desk] == ["desk_audit_duration"] and none == []
+
+
+def test_positions_roundtrip_in_db():
+    from taxcorpus.db import get_positions, load_positions_db, positions_by_docs
+    from taxcorpus.positions import Position
+
+    with _conn() as conn:
+        doc = conn.execute("SELECT d.doc_id, r.to_unit_id FROM document d JOIN doc_reference r ON r.doc_id = d.doc_id LIMIT 1").fetchone()
+        before = conn.execute("SELECT count(*) AS n FROM position").fetchone()["n"]
+        existing = [Position(**{k: v for k, v in r.items() if k in Position.__dataclass_fields__})
+                    for r in conn.execute("SELECT * FROM position").fetchall()]
+        try:
+            probe = Position("probe#" + doc["to_unit_id"], doc["doc_id"], doc["to_unit_id"], "neutral", "проба", "q", 0.5)
+            ghost = Position("ghost#x", "нет-такого-документа", doc["to_unit_id"], "neutral", "проба", "q", 0.5)
+            n = load_positions_db(conn, [*existing, probe, ghost])
+            assert n == before + 1
+            assert any(r["position_id"] == probe.position_id for r in get_positions(conn, doc["to_unit_id"]))
+            assert positions_by_docs(conn, [doc["doc_id"]])[doc["doc_id"]][doc["to_unit_id"]] == "neutral"
+        finally:
+            load_positions_db(conn, existing)
