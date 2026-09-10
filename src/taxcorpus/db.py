@@ -82,14 +82,14 @@ def load_corpus(conn: psycopg.Connection, meta: dict, units: list[dict],
             )
 
         # полная перезагрузка единиц акта: сначала все зависимые таблицы
-        # (reference, amendment, unit_text), затем unit и edition
-        conn.execute(
-            """
-            DELETE FROM reference WHERE from_unit_id IN
-                (SELECT unit_id FROM unit WHERE act_id = %s)
-            """,
-            (act_id,),
-        )
+        # (reference, amendment, term, parameter, unit_text), затем unit и edition
+        for sql in (
+            "DELETE FROM reference WHERE from_unit_id IN (SELECT unit_id FROM unit WHERE act_id = %s)",
+            "DELETE FROM reference WHERE to_unit_id IN (SELECT unit_id FROM unit WHERE act_id = %s)",
+            "DELETE FROM term WHERE definition_unit_id IN (SELECT unit_id FROM unit WHERE act_id = %s)",
+            "DELETE FROM parameter WHERE source_unit_id IN (SELECT unit_id FROM unit WHERE act_id = %s)",
+        ):
+            conn.execute(sql, (act_id,))
         conn.execute(
             """
             DELETE FROM amendment WHERE target_unit_id IN
@@ -311,4 +311,93 @@ def search_units(conn, query: str, as_of_date: str, limit: int = 10,
         """,
         (expansions, query, expansions,
          as_of_date, as_of_date, kind, kind, chunk_filter, limit),
+    ).fetchall()
+
+
+# --- слой 3: параметры и термины -------------------------------------------------
+
+def load_parameters(conn, rows: list[dict], edition_valid_from: date | None = None) -> int:
+    """Полная перезагрузка таблицы parameter из сида (data/parameters/*.json).
+
+    valid_from_source = edition: начало неизвестно, valid_from остаётся NULL
+    (норма действует как минимум с даты редакции; get_parameter отдаёт её на любую дату).
+    """
+    with conn.transaction():
+        conn.execute("DELETE FROM parameter")
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO parameter (name, title, value, unit, valid_from, valid_to,
+                                       valid_from_source, conditions, source_unit_id,
+                                       anchor, region, status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                [
+                    (p["name"], p.get("title"), p["value"], p["unit"], p.get("valid_from"),
+                     p.get("valid_to"), p.get("valid_from_source", "edition"),
+                     Json(p.get("conditions") or {}), p["source_unit_id"], p["anchor"],
+                     p.get("region"), p.get("status", "verified_by_anchor"))
+                    for p in rows
+                ],
+            )
+    return len(rows)
+
+
+def get_parameter(conn, name: str, as_of_date: str, region: str | None = None) -> dict | None:
+    """Ставка/срок/лимит на дату (инструмент get_parameter слоя 5) вместе с текстом-доказательством."""
+    return conn.execute(
+        """
+        SELECT p.name, p.title, p.value, p.unit, p.valid_from, p.valid_to, p.valid_from_source,
+               p.conditions, p.source_unit_id, p.anchor, p.region, u.label,
+               (SELECT t.full_text FROM unit_text t WHERE t.unit_id = p.source_unit_id
+                  AND (t.valid_from IS NULL OR t.valid_from <= %s)
+                  AND (t.valid_to IS NULL OR t.valid_to > %s)
+                ORDER BY t.valid_from DESC NULLS LAST LIMIT 1) AS source_text
+        FROM parameter p JOIN unit u ON u.unit_id = p.source_unit_id
+        WHERE p.name = %s
+          AND (p.valid_from IS NULL OR p.valid_from <= %s)
+          AND (p.valid_to IS NULL OR p.valid_to > %s)
+          AND (p.region IS NOT DISTINCT FROM %s OR p.region IS NULL)
+        ORDER BY p.region NULLS LAST, p.valid_from DESC NULLS LAST
+        LIMIT 1
+        """,
+        (as_of_date, as_of_date, name, as_of_date, as_of_date, region),
+    ).fetchone()
+
+
+def load_terms(conn, rows: list[dict], act_id: int, valid_from: date | None = None) -> int:
+    """Перезагрузка терминов, определённых в единицах данного акта."""
+    with conn.transaction():
+        conn.execute(
+            """
+            DELETE FROM term WHERE definition_unit_id IN
+                (SELECT unit_id FROM unit WHERE act_id = %s)
+            """,
+            (act_id,),
+        )
+        with conn.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO term (term, term_norm, definition, definition_unit_id, scope, valid_from)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                [(t["term"], t["term_norm"], t["definition"], t["definition_unit_id"],
+                  t.get("scope", "code"), valid_from) for t in rows],
+            )
+    return len(rows)
+
+
+def find_terms(conn, query: str, as_of_date: str) -> list[dict]:
+    """Термин по подстроке (регистронезависимо) на дату."""
+    norm = query.lower().replace("ё", "е")
+    return conn.execute(
+        """
+        SELECT t.term, t.definition, t.definition_unit_id, t.scope, u.label
+        FROM term t JOIN unit u ON u.unit_id = t.definition_unit_id
+        WHERE t.term_norm LIKE %s
+          AND (t.valid_from IS NULL OR t.valid_from <= %s)
+          AND (t.valid_to IS NULL OR t.valid_to > %s)
+        ORDER BY length(t.term), t.term
+        """,
+        (f"%{norm}%", as_of_date, as_of_date),
     ).fetchall()
