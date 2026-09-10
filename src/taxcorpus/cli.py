@@ -352,6 +352,42 @@ def cmd_deadline(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_ask(args: argparse.Namespace) -> int:
+    """Вопрос агенту (слой 6): инструменты корпуса -> синтез -> проверка цитат."""
+    from .agent import TaxAgent, render
+    from .deadlines import ProductionCalendar
+    from .tools import DbCorpus, LocalCorpus
+
+    try:
+        import anthropic
+    except ImportError:
+        print("нужен пакет anthropic: pip install -e '.[agent]'", file=sys.stderr)
+        return 1
+    client = anthropic.Anthropic()  # ключ из ANTHROPIC_API_KEY или профиля `ant auth login`
+
+    conn = None
+    if args.local:
+        corpus = LocalCorpus(args.data_dir)
+        print("[внимание] офлайн-корпус: поиск грубый (по совпадению слов), без БД", file=sys.stderr)
+    else:
+        from .db import connect
+        conn = connect(args.db_url)
+        corpus = DbCorpus(conn, args.data_dir)
+    try:
+        agent = TaxAgent(client, corpus, model=args.model, effort=args.effort,
+                         fallbacks=not args.no_fallbacks,
+                         calendar=ProductionCalendar.load(args.calendar_dir))
+        result = agent.ask(args.question, args.as_of)
+    finally:
+        if conn is not None:
+            conn.close()
+    print(render(result))
+    if args.log:
+        Path(args.log).write_text(json.dumps(result.to_dict(), ensure_ascii=False, indent=2),
+                                  encoding="utf-8")
+    return 0 if result.verification.ok and not result.refused else 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="taxcorpus", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -444,6 +480,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_dl.add_argument("--calendar-dir", default=None,
                       help="каталог с переносами выходных по годам (data/calendar/<год>.json)")
     p_dl.set_defaults(func=cmd_deadline)
+
+    p_ask = sub.add_parser("ask", help="вопрос агенту с проверкой цитат (нужен anthropic + ключ)")
+    p_ask.add_argument("--question", required=True)
+    p_ask.add_argument("--as-of", default=date.today().isoformat())
+    p_ask.add_argument("--model", default="claude-opus-5")
+    p_ask.add_argument("--effort", default="high", choices=["low", "medium", "high", "xhigh", "max"])
+    p_ask.add_argument("--local", action="store_true", help="офлайн-корпус из JSONL вместо БД")
+    p_ask.add_argument("--data-dir", default="data/processed")
+    p_ask.add_argument("--db-url", default=None)
+    p_ask.add_argument("--calendar-dir", default=None)
+    p_ask.add_argument("--no-fallbacks", action="store_true",
+                       help="не использовать серверный фолбэк при отказе модели")
+    p_ask.add_argument("--log", default=None, help="куда записать JSON-журнал запроса")
+    p_ask.set_defaults(func=cmd_ask)
 
     return parser
 
