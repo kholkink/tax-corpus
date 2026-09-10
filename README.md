@@ -199,6 +199,15 @@ python -m taxcorpus workspace deadlines --slug delo1             # сроки с
 python -m taxcorpus users add --email anna@firm.ru --name "Анна" && python -m taxcorpus users token --email anna@firm.ru
 python -m taxcorpus users grant --slug delo1 --email anna@firm.ru --role editor
 
+# региональный слой (F10): параметры с регионом (код субъекта) и налогом, таблица regional_act (закон
+# субъекта с ссылкой на pravo.gov.ru); get_parameter(name, region) отдаёт региональное значение, иначе
+# федеральное с пометкой; list_regional_benefits(region, tax); регион дела (manifest.jurisdiction)
+# подставляется агенту автоматически. Данные — только из первоисточников: формат в
+# data/parameters/regional.example.json, загрузка `load-regions --file …`; сервис ФНС по ставкам
+# (ASP.NET-форма с viewstate) краулером пока не поддержан.
+python -m taxcorpus param --name usn_rate_income --as-of 2026-09-10 --region 77
+# API: GET /parameters?region=77&tax=usn, GET /parameters/{name}?region=77
+
 # история редакций (F3): patcher.py разбирает изменяющие законы (заменить слова / после слов дополнить /
 # исключить / изложить в редакции / дополнить пунктом-подпунктом-статьёй-абзацем / признать утратившим силу /
 # абзац исключить; адреса вплоть до абзаца, наследование «в статье 100: а) …») и применяет их к дереву

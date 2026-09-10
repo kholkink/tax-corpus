@@ -277,6 +277,9 @@ class CaseSession:
                     continue
                 if self.redactor:  # аргументы модели содержат плейсхолдеры — вернуть реальные значения
                     args = json.loads(self._in(json.dumps(args, ensure_ascii=False)))
+                if block.name in ("get_parameter", "list_regional_benefits") and not args.get("region") \
+                        and self.ws.manifest.jurisdiction:
+                    args = {**args, "region": self.ws.manifest.jurisdiction}   # регион дела по умолчанию (F10)
                 if (block.name in WORKSPACE_TOOL_NAMES or block.name in FACT_TOOL_NAMES
                         or block.name in TEMPLATE_TOOL_NAMES or block.name in COLLAB_TOOL_NAMES
                         or block.name in MONITOR_TOOL_NAMES):

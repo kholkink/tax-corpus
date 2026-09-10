@@ -796,6 +796,19 @@ def cmd_patch(args: argparse.Namespace) -> int:
     return 0 if not r["failed"] else 3
 
 
+def cmd_load_regions(args: argparse.Namespace) -> int:
+    """Региональные параметры (F10) из JSON -> parameter/regional_act."""
+    from .db import connect, load_regional_parameters
+    rows = json.loads(Path(args.file).read_text(encoding="utf-8"))["parameters"]
+    conn = connect(args.db_url)
+    try:
+        n = load_regional_parameters(conn, rows)
+    finally:
+        conn.close()
+    print(f"региональных параметров загружено: {n} (регионы: {sorted({r['region'] for r in rows})})")
+    return 0
+
+
 def cmd_users(args: argparse.Namespace) -> int:
     """Пользователи, токены и роли в делах (P5): add / list / token / tokens / revoke-token / grant / revoke / members."""
     from .auth import AuthError, UserStore
@@ -976,7 +989,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_param.add_argument("--as-of", default=date.today().isoformat())
     p_param.add_argument("--region", default=None)
     p_param.add_argument("--db-url", default=None)
-    p_param.set_defaults(func=cmd_param)
+        p_param.add_argument("--region", default=None, help="код субъекта РФ для региональной ставки (F10)")
+p_param.set_defaults(func=cmd_param)
 
     p_term = sub.add_parser("term", help="определение термина (ст. 11 НК) на дату")
     p_term.add_argument("--term", required=True, help="подстрока термина: «индивидуальн»")
@@ -1119,6 +1133,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_audit.add_argument("--data-dir", default="data/processed")
     p_audit.add_argument("--db-url", default=None)
     p_audit.set_defaults(func=cmd_audit)
+
+    p_lr = sub.add_parser("load-regions", help="региональные ставки и льготы из JSON -> БД (F10)")
+    p_lr.add_argument("--file", default="data/parameters/regional.json")
+    p_lr.add_argument("--db-url", default=None)
+    p_lr.set_defaults(func=cmd_load_regions)
 
     p_patch = sub.add_parser("patch", help="изменяющий закон -> версии норм с даты вступления (F3)")
     p_patch.add_argument("--act", default="nk1", help="nk1 | nk2")

@@ -585,6 +585,54 @@ def get_parameter(conn, name: str, as_of_date: str, region: str | None = None) -
     ).fetchone()
 
 
+def list_parameters(conn, as_of_date: str, region: str | None = None, tax: str | None = None,
+                    prefix: str | None = None) -> list[dict]:
+    """Параметры на дату по региону/налогу (F10): региональные строки + федеральные без региона."""
+    return conn.execute(
+        """
+        SELECT p.name, p.title, p.value, p.unit, p.valid_from, p.valid_to, p.conditions, p.source_unit_id,
+               p.anchor, p.region, p.tax, p.status, u.label,
+               r.number AS regional_act_number, r.adoption_date AS regional_act_date, r.title AS regional_act_title,
+               r.source_url AS regional_act_url
+        FROM parameter p JOIN unit u ON u.unit_id = p.source_unit_id
+        LEFT JOIN regional_act r ON r.regional_act_id = p.regional_act_id
+        WHERE (p.valid_from IS NULL OR p.valid_from <= %s) AND (p.valid_to IS NULL OR p.valid_to > %s)
+          AND (%s::text IS NULL OR p.region = %s::text OR p.region IS NULL)
+          AND (%s::text IS NULL OR p.tax = %s::text)
+          AND (%s::text IS NULL OR p.name LIKE %s::text || '%%')
+        ORDER BY p.name, p.region NULLS LAST, p.valid_from DESC NULLS LAST
+        """, (as_of_date, as_of_date, region, region, tax, tax, prefix, prefix)).fetchall()
+
+
+def load_regional_parameters(conn, rows: list[dict]) -> int:
+    """Региональные параметры из JSON (region, tax, name, value, unit, valid_from, source_unit_id, anchor,
+    regional_act {region, number, adoption_date, title, source_url}); строки региона перезаписываются."""
+    n = 0
+    with conn.transaction():
+        for p in rows:
+            act = p.get("regional_act") or {}
+            act_id = None
+            if act:
+                act_id = conn.execute(
+                    "INSERT INTO regional_act (region, number, adoption_date, title, source_url, retrieved_at) "
+                    "VALUES (%s, %s, %s, %s, %s, now()) ON CONFLICT (region, number, adoption_date) DO UPDATE SET "
+                    "title = EXCLUDED.title, source_url = EXCLUDED.source_url RETURNING regional_act_id",
+                    (p["region"], act["number"], act.get("adoption_date"), act.get("title"), act.get("source_url"))).fetchone()["regional_act_id"]
+            conn.execute("DELETE FROM parameter WHERE name = %s AND region = %s AND valid_from IS NOT DISTINCT FROM %s",
+                         (p["name"], p["region"], p.get("valid_from")))
+            conn.execute(
+                """
+                INSERT INTO parameter (name, title, value, unit, valid_from, valid_to, valid_from_source, conditions,
+                                       source_unit_id, anchor, region, status, regional_act_id, tax)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (p["name"], p.get("title"), p["value"], p["unit"], p.get("valid_from"), p.get("valid_to"),
+                 p.get("valid_from_source", "text"), Json(p.get("conditions") or {}), p["source_unit_id"], p["anchor"],
+                 p["region"], p.get("status", "manual"), act_id, p.get("tax")))
+            n += 1
+    return n
+
+
 def load_terms(conn, rows: list[dict], act_id: int, valid_from: date | None = None) -> int:
     """Перезагрузка терминов, определённых в единицах данного акта."""
     with conn.transaction():

@@ -1,0 +1,25 @@
+{
+ "_comment": "F10: региональные ставки и льготы. Каждая строка — значение с регионом (код субъекта), налогом, интервалом, единицей-источником НК (полномочие субъекта) и якорем в тексте закона субъекта; regional_act — реквизиты закона субъекта с ссылкой на pravo.gov.ru. Значения вносятся только из первоисточника (закон субъекта) — файл-образец пуст.",
+ "format": {
+  "name": "usn_rate_income",
+  "tax": "usn",
+  "region": "77",
+  "value": 6,
+  "unit": "percent",
+  "valid_from": "2025-01-01",
+  "valid_to": null,
+  "source_unit_id": "nk2.ch26-2.art346-20.p1",
+  "anchor": "фраза из закона субъекта",
+  "conditions": {
+   "activity": "…"
+  },
+  "regional_act": {
+   "region": "77",
+   "number": "…",
+   "adoption_date": "…",
+   "title": "…",
+   "source_url": "https://pravo.gov.ru/…"
+  }
+ },
+ "parameters": []
+}
