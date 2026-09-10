@@ -31,6 +31,8 @@ src/taxcorpus/
   evaluation.py — метрики §6 плана по ответам агента; прогон — scripts/eval_agent.py
   interpretations.py — реестр писем/пленумов, привязка interprets, get_interpretations,
                   проверка цитат на документы
+  api.py        — FastAPI: /units, /search, /resolve, /parameters, /terms, /interpretations,
+                  /deadline, /ask
   cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term / deadline / ask / load-docs / interpretations
 sql/schema.sql  — Act / Edition / Unit / UnitText / Reference / Amendment / Parameter / Term /
                   raw_document / parse_run
@@ -121,6 +123,9 @@ python -m taxcorpus load-docs --input data/interpretations   # -> таблицы
 python scripts/fetch_fns_letters.py --pages 114          # весь раздел, ~1705 писем
 python scripts/fetch_minfin_letters.py                   # письма Минфина по 11 категориям раздела
 python -m taxcorpus snapshot --description "…"           # снимок корпуса: счётчики, хеши, коммит (§7)
+
+# HTTP API (слой 7): те же инструменты + /ask; бэкенд по TAXCORPUS_DB, иначе офлайн-корпус
+pip install -e ".[api]" && uvicorn taxcorpus.api:app --reload   # /docs — OpenAPI
 
 # оценка агента на эталоне (метрики §6 плана: citation precision/recall, hallucination
 # rate, temporal correctness, abstention; каждый вопрос — платный запрос к модели):
