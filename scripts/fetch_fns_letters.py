@@ -31,12 +31,23 @@ LIST_URL = BASE + "/rn77/about_fts/about_nalog/"
 UA = "tax-corpus-research/0.1 (+https://github.com/kholkink/tax-corpus; kholkinkbauman@gmail.com)"
 
 
-def fetch(url: str, delay: float) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "ru"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        data = resp.read()
-    time.sleep(delay)
-    return data.decode("utf-8", errors="replace")
+def fetch(url: str, delay: float, attempts: int = 4) -> str:
+    """GET с паузой после запроса; при обрыве (TLS EOF, 5xx, таймаут) — повтор с растущей
+    паузой 15/45/135 с: сервер nalog.gov.ru рвёт соединения при плотном потоке запросов."""
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "ru"})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = resp.read()
+            time.sleep(delay)
+            return data.decode("utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            pause = 15 * (3 ** attempt)
+            print(f"[retry] {url}: {type(exc).__name__}; пауза {pause} с", file=sys.stderr, flush=True)
+            time.sleep(pause)
+    raise last  # type: ignore[misc]
 
 
 RE_ITEM = re.compile(r'<div class="news-block__item[^"]*">(.*?)(?=<div class="news-block__item|</section>|$)', re.S)
@@ -133,7 +144,8 @@ def parse_letter(page: str, meta: dict) -> dict | None:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--pages", type=int, default=1, help="страниц списка (по 15 писем)")
+    ap.add_argument("--pages", type=int, default=1, help="последняя страница списка (по 15 писем)")
+    ap.add_argument("--start-page", type=int, default=1, help="с какой страницы списка начать")
     ap.add_argument("--max", type=int, default=None, help="не больше N писем за запуск")
     ap.add_argument("--delay", type=float, default=2.0)
     ap.add_argument("--out", default=str(ROOT / "data" / "interpretations" / "fns_mandatory.jsonl"))
@@ -153,7 +165,7 @@ def main() -> int:
 
     fetched = 0
     with out.open("a", encoding="utf-8") as fh:
-        for page_no in range(1, args.pages + 1):
+        for page_no in range(args.start_page, args.pages + 1):
             url = LIST_URL if page_no == 1 else f"{LIST_URL}{page_no}.html"
             try:
                 listing = fetch(url, args.delay)
