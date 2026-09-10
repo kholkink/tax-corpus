@@ -136,3 +136,35 @@ CREATE TABLE IF NOT EXISTS parse_run (
     stats      JSONB NOT NULL,
     issues     JSONB NOT NULL
 );
+
+-- слой 3 плана: параметры (ставки, сроки, лимиты) с интервалами действия и источником.
+-- Значение подтверждено якорем в тексте source_unit_id (tests/test_parameters.py).
+CREATE TABLE IF NOT EXISTS parameter (
+    parameter_id      BIGSERIAL PRIMARY KEY,
+    name              TEXT NOT NULL,              -- vat_rate_general
+    title             TEXT,
+    value             NUMERIC NOT NULL,
+    unit              TEXT NOT NULL,              -- percent | months | years | rub
+    valid_from        DATE,                       -- NULL = начало неизвестно
+    valid_to          DATE,
+    valid_from_source TEXT NOT NULL,              -- amendment | text | edition
+    conditions        JSONB NOT NULL DEFAULT '{}'::jsonb,
+    source_unit_id    TEXT NOT NULL REFERENCES unit(unit_id),
+    anchor            TEXT NOT NULL,              -- фраза в тексте источника
+    region            TEXT,
+    status            TEXT NOT NULL DEFAULT 'verified_by_anchor'
+);
+CREATE INDEX IF NOT EXISTS idx_parameter_name ON parameter(name);
+
+-- термины с определениями (ст. 11 НК и отраслевые); ребро defines_term
+CREATE TABLE IF NOT EXISTS term (
+    term_id            BIGSERIAL PRIMARY KEY,
+    term               TEXT NOT NULL,
+    term_norm          TEXT NOT NULL,             -- нижний регистр, ё -> е
+    definition         TEXT NOT NULL,
+    definition_unit_id TEXT NOT NULL REFERENCES unit(unit_id),
+    scope              TEXT NOT NULL DEFAULT 'code', -- code | chapter | article
+    valid_from         DATE,
+    valid_to           DATE
+);
+CREATE INDEX IF NOT EXISTS idx_term_norm ON term(term_norm);

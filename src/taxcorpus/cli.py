@@ -159,17 +159,76 @@ def cmd_load(args: argparse.Namespace) -> int:
     if report_json_path.exists():
         issues = json.loads(report_json_path.read_text(encoding="utf-8"))
 
+    from .db import load_parameters, load_terms
+    from .terms import extract_terms
+
+    parameters_path = Path(args.parameters) if getattr(args, "parameters", None) else None
     conn = connect(args.db_url)
     try:
         ensure_schema(conn, args.schema)
         result = load_corpus(conn, meta, units, references, stats=meta.get("stats"),
                              issues=issues, amendments=amendments)
+        edition_from = date.fromisoformat(meta["valid_from"]) if meta.get("valid_from") else None
+        result["terms"] = load_terms(conn, extract_terms(units), result["act_id"], edition_from)
+        result["parameters"] = 0
+        if parameters_path and parameters_path.exists():
+            seed = json.loads(parameters_path.read_text(encoding="utf-8"))["parameters"]
+            # параметры ссылаются на единицы обоих актов: грузим только те, чьи источники уже в БД
+            known = {r["unit_id"] for r in conn.execute("SELECT unit_id FROM unit").fetchall()}
+            rows = [p for p in seed if p["source_unit_id"] in known]
+            result["parameters"] = load_parameters(conn, rows, edition_from)
+            if len(rows) < len(seed):
+                print(f"[warn] параметров пропущено {len(seed) - len(rows)}: их единицы-источники "
+                      "ещё не загружены (загрузите второй акт и повторите load)", file=sys.stderr)
     finally:
         conn.close()
 
     print(f"загружено: act_id={result['act_id']}, edition_id={result['edition_id']}, "
           f"units={result['units']}, references={result['references']}, "
-          f"amendments={result.get('amendments', 0)}")
+          f"amendments={result.get('amendments', 0)}, terms={result['terms']}, "
+          f"parameters={result['parameters']}")
+    return 0
+
+
+def cmd_param(args: argparse.Namespace) -> int:
+    """Ставка/срок/лимит на дату (get_parameter) с текстом-доказательством."""
+    from .db import connect, get_parameter
+
+    conn = connect(args.db_url)
+    try:
+        row = get_parameter(conn, args.name, args.as_of, region=args.region)
+    finally:
+        conn.close()
+    if row is None:
+        print(f"параметр {args.name} не найден или не действует на {args.as_of}", file=sys.stderr)
+        return 1
+    print(f"{row['name']} — {row['title'] or ''}: {row['value']} {row['unit']}")
+    start = row["valid_from"] or f"не ранее даты редакции (источник интервала: {row['valid_from_source']})"
+    print(f"интервал: {start} … {row['valid_to'] or 'наст. время'}")
+    if row["conditions"]:
+        print(f"условия: {json.dumps(row['conditions'], ensure_ascii=False)}")
+    print(f"источник: {row['source_unit_id']} — {row['label']}")
+    if row["source_text"]:
+        print()
+        print(row["source_text"])
+    return 0
+
+
+def cmd_term(args: argparse.Namespace) -> int:
+    """Определение термина (ст. 11 НК) на дату."""
+    from .db import connect, find_terms
+
+    conn = connect(args.db_url)
+    try:
+        rows = find_terms(conn, args.term, args.as_of)
+    finally:
+        conn.close()
+    if not rows:
+        print(f"термин «{args.term}» не найден", file=sys.stderr)
+        return 1
+    for r in rows[: args.limit]:
+        print(f"{r['term']} — {r['definition']}")
+        print(f"   [{r['definition_unit_id']} — {r['label']}]")
     return 0
 
 
@@ -299,6 +358,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_load.add_argument("--db-url", default=None)
     p_load.add_argument("--schema", default=None, help="путь к sql/schema.sql")
     p_load.add_argument("--report-dir", default="reports")
+    p_load.add_argument("--parameters", default="data/parameters/parameters_v0.json",
+                        help="сид параметров (ставки/сроки); '' — не грузить")
     p_load.set_defaults(func=cmd_load)
 
     p_ingest = sub.add_parser("ingest", parents=[common], help="parse + load за один проход")
@@ -306,6 +367,7 @@ def build_parser() -> argparse.ArgumentParser:
     p_ingest.add_argument("--report-dir", default="reports")
     p_ingest.add_argument("--db-url", default=None)
     p_ingest.add_argument("--schema", default=None)
+    p_ingest.add_argument("--parameters", default="data/parameters/parameters_v0.json")
     p_ingest.set_defaults(func=cmd_ingest)
 
     p_convert = sub.add_parser("convert", help="сырой источник -> нормализованный текст")
@@ -336,6 +398,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_diff.add_argument("--as-of", default=date.today().isoformat())
     p_diff.add_argument("--db-url", default=None)
     p_diff.set_defaults(func=cmd_diff)
+
+    p_param = sub.add_parser("param", help="ставка/срок/лимит на дату (get_parameter)")
+    p_param.add_argument("--name", required=True, help="например: vat_rate_general")
+    p_param.add_argument("--as-of", default=date.today().isoformat())
+    p_param.add_argument("--region", default=None)
+    p_param.add_argument("--db-url", default=None)
+    p_param.set_defaults(func=cmd_param)
+
+    p_term = sub.add_parser("term", help="определение термина (ст. 11 НК) на дату")
+    p_term.add_argument("--term", required=True, help="подстрока термина: «индивидуальн»")
+    p_term.add_argument("--as-of", default=date.today().isoformat())
+    p_term.add_argument("--limit", type=int, default=5)
+    p_term.add_argument("--db-url", default=None)
+    p_term.set_defaults(func=cmd_term)
 
     return parser
 

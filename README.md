@@ -18,9 +18,12 @@ src/taxcorpus/
   resolver.py   — резолв ссылок в канонические unit_id (точный номер > вариант банка;
                   контекстные «пункт 5» — относительно статьи-источника)
   amendments.py — атомарные правки из пометок редакции (словесные даты, латинская «N»)
-  db.py         — загрузка в PostgreSQL (idempotent), get_unit(unit_id, as_of_date)
-  cli.py        — CLI: convert / parse / load / ingest / unit
-sql/schema.sql  — Act / Edition / Unit / UnitText / Reference / raw_document / parse_run
+  db.py         — загрузка в PostgreSQL (idempotent), get_unit / search_units /
+                  get_parameter / find_terms (инструменты слоя 5)
+  terms.py      — термины ст. 11 НК («термин - определение») -> таблица term
+  cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term
+sql/schema.sql  — Act / Edition / Unit / UnitText / Reference / Amendment / Parameter / Term /
+                  raw_document / parse_run
 tests/          — pytest: идеализированный формат, формат банка ГАС, валидатор, нормализация
 scripts/setup_postgres.sh — локальный PostgreSQL 16 без прав администратора
 ```
@@ -78,6 +81,13 @@ python -m taxcorpus search --query "камеральная налоговая п
 
 # история правок единицы за период:
 python -m taxcorpus diff --id nk1.ch1.art6-1 --since 2000-01-01
+
+# ставка/срок/лимит на дату с текстом-доказательством (таблица parameter, сид
+# data/parameters/parameters_v0.json — каждое значение подтверждено якорем в тексте):
+python -m taxcorpus param --name vat_rate_general --as-of 2026-09-10
+
+# определение термина из ст. 11 НК:
+python -m taxcorpus term --term "индивидуальн"
 
 # отчёт по частично разрешённым ссылкам (очередь сверки):
 python scripts/report_partial.py
