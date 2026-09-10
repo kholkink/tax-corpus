@@ -96,6 +96,8 @@
       <input name="text" placeholder="замечание к выбранному файлу агента" required>
       <button>Добавить</button>
     </form>
+    <h2>Мониторинг <span class="status" id="notif-count"></span></h2>
+    <div id="notifications" class="status"></div>
     <h2>Активность</h2>
     <div id="activity" class="status"></div>
     <h2>Черновик по шаблону</h2>
@@ -187,7 +189,7 @@ async function openWorkspace(slug) {
   const w = await api(`/workspaces/${slug}`);
   state.asOf = w.manifest.as_of;
   $('ws-meta').textContent = `${w.manifest.title} · as_of ${w.manifest.as_of}` + (w.manifest.corpus_snapshot ? ` · снимок #${w.manifest.corpus_snapshot}` : '') + (w.manifest.confidentiality === 'sensitive' ? ' · ЧУВСТВИТЕЛЬНОЕ' : '') + (w.provider ? ` · ${w.provider}` : '');
-  renderFiles(w.files); renderTasks(w.tasks); renderSessions(w.sessions); state.file = null; $('comments').innerHTML = ''; $('comments-file').textContent = ''; loadActivity();
+  renderFiles(w.files); renderTasks(w.tasks); renderSessions(w.sessions); state.file = null; $('comments').innerHTML = ''; $('comments-file').textContent = ''; loadActivity(); loadNotifications();
   $('messages').innerHTML = '<div class="status">Новая сессия: опишите задачу или выберите сессию справа.</div>';
   $('session-status').textContent = '';
   loadWorkspaces();
@@ -281,6 +283,22 @@ async function loadComments() {
     cs.filter(r => r.parent_id === c.comment_id).map(r => `<div style="margin-left:12px;border-left:2px solid var(--line);padding-left:6px"><b>${esc(r.author)}</b> <span class="status">${r.created_at.slice(0,16)}</span><div>${esc(r.text)}</div></div>`).join('') +
     (c.resolved ? '' : `<button class="secondary" data-resolve="${c.comment_id}" style="padding:2px 6px">закрыть</button>`) + `</div>`).join('') || '<div class="status">комментариев нет</div>';
   document.querySelectorAll('[data-resolve]').forEach(b => b.onclick = async () => { await api(`/workspaces/${state.slug}/comments/${b.dataset.resolve}/resolve`, {method:'POST'}); loadComments(); loadActivity(); });
+}
+async function loadNotifications() {
+  if (!state.slug) return;
+  try {
+    const ns = await api(`/workspaces/${state.slug}/notifications?limit=20`);
+    const open = ns.filter(n => n.status === 'open').length;
+    $('notif-count').textContent = open ? `🔔 ${open}` : '';
+    $('notifications').innerHTML = ns.map(n => `<div class="task ${n.status==='open'?'':'done'}"><b>${esc(n.kind)}</b> ${esc(n.unit_id||n.doc_id||'')} <span class="status">${String(n.created_at).slice(0,10)}</span><div class="status">файлы: ${esc((n.paths||[]).join(', '))}</div>${n.status==='open' ? `<button class="secondary" data-apply="${n.notification_id}" style="padding:2px 6px">обновить файлы агентом</button> <button class="secondary" data-seen="${n.notification_id}" style="padding:2px 6px">прочитано</button>` : (n.applied_session ? `<span class="status">применено: сессия ${esc(n.applied_session)}</span>` : '')}${n.unit_id ? ` <button class="secondary" data-diff="${esc(n.unit_id)}" style="padding:2px 6px">что изменилось</button>` : ''}</div>`).join('') || 'уведомлений нет';
+    document.querySelectorAll('[data-seen]').forEach(b => b.onclick = async () => { await api(`/workspaces/${state.slug}/notifications/${b.dataset.seen}/seen`, {method:'POST'}); loadNotifications(); });
+    document.querySelectorAll('[data-diff]').forEach(b => b.onclick = async () => { const c = await api(`/workspaces/${state.slug}/changes/${b.dataset.diff}`); $('viewer').textContent = c.markdown; });
+    document.querySelectorAll('[data-apply]').forEach(b => b.onclick = async () => {
+      b.disabled = true; b.textContent = 'агент работает…';
+      try { const r = await api(`/workspaces/${state.slug}/notifications/${b.dataset.apply}/apply`, {method:'POST'}); state.session = r.session_id; addMessage('agent', r.text); const w = await api(`/workspaces/${state.slug}`); renderFiles(w.files); renderSessions(w.sessions); }
+      catch (e) { alert(e.message); } finally { loadNotifications(); loadActivity(); }
+    });
+  } catch (e) { $('notifications').textContent = e.message; }
 }
 async function loadActivity() {
   if (!state.slug) return;

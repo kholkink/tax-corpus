@@ -110,6 +110,21 @@ def load_corpus(conn: psycopg.Connection, meta: dict, units: list[dict],
                  meta["source_url"], meta.get("source_sha256") or ""),
             )
 
+        # F2: до перезагрузки — текущие хеши текста и параметры акта (для событий) и архив версий
+        previous = {r["unit_id"]: r for r in conn.execute(
+            "SELECT t.unit_id, t.text_hash, t.valid_from FROM unit_text t JOIN unit u ON u.unit_id = t.unit_id "
+            "WHERE u.act_id = %s AND t.valid_to IS NULL", (act_id,)).fetchall()}
+        old_parameters = {r["name"]: r for r in conn.execute(
+            "SELECT p.name, p.value::text AS value, p.valid_from, p.source_unit_id FROM parameter p "
+            "JOIN unit u ON u.unit_id = p.source_unit_id WHERE u.act_id = %s AND p.valid_to IS NULL", (act_id,)).fetchall()}
+        if _table_exists(conn, "unit_text_archive"):
+            conn.execute(
+                """
+                INSERT INTO unit_text_archive (unit_id, act_code, text_hash, text, full_text, valid_from, valid_to)
+                SELECT t.unit_id, %s, t.text_hash, t.text, t.full_text, t.valid_from, t.valid_to
+                FROM unit_text t JOIN unit u ON u.unit_id = t.unit_id WHERE u.act_id = %s
+                ON CONFLICT (unit_id, text_hash) DO NOTHING
+                """, (act_code, act_id))
         # полная перезагрузка единиц акта: сначала все зависимые таблицы
         # (reference, amendment, term, parameter, unit_text), затем unit и edition
         for sql in (
@@ -248,9 +263,68 @@ def load_corpus(conn: psycopg.Connection, meta: dict, units: list[dict],
             (act_code, Json(stats), Json(issues)),
         )
 
-    return {"act_id": act_id, "edition_id": edition_id, "units": len(units),
+    events = detect_unit_changes(conn, act_code, previous, valid_from)
+    result = {"events": events, "_old_parameters": old_parameters}
+    result.update({"act_id": act_id, "edition_id": edition_id, "units": len(units),
             "references": len(references), "amendments": len(amendments),
-            "references_pending": pending, "references_relinked": relinked}
+            "references_pending": pending, "references_relinked": relinked})
+    return result
+
+
+def _table_exists(conn, name: str) -> bool:
+    return bool(conn.execute("SELECT to_regclass(%s) IS NOT NULL AS ok", (name,)).fetchone()["ok"])
+
+
+def detect_unit_changes(conn, act_code: str, previous: dict, edition_from) -> list[dict]:
+    """События F2 после перезагрузки акта: unit_text_changed / unit_repealed / unit_added.
+    Первая загрузка (previous пуст) событий не порождает."""
+    if not previous:
+        return []
+    current = {r["unit_id"]: r["text_hash"] for r in conn.execute(
+        "SELECT t.unit_id, t.text_hash FROM unit_text t JOIN unit u ON u.unit_id = t.unit_id "
+        "JOIN act a ON a.act_id = u.act_id WHERE a.act_code = %s AND t.valid_to IS NULL", (act_code,)).fetchall()}
+    events = []
+    for uid, row in previous.items():
+        if uid not in current:
+            events.append({"kind": "unit_repealed", "act_code": act_code, "unit_id": uid,
+                           "payload": {"old_hash": row["text_hash"], "edition_from": str(edition_from)}})
+        elif current[uid] != row["text_hash"]:
+            events.append({"kind": "unit_text_changed", "act_code": act_code, "unit_id": uid,
+                           "payload": {"old_hash": row["text_hash"], "new_hash": current[uid],
+                                       "edition_from": str(edition_from)}})
+    for uid in current:
+        if uid not in previous:
+            events.append({"kind": "unit_added", "act_code": act_code, "unit_id": uid,
+                           "payload": {"new_hash": current[uid], "edition_from": str(edition_from)}})
+    return events
+
+
+def detect_parameter_changes(conn, old_parameters: dict) -> list[dict]:
+    """parameter_changed: значение действующего параметра изменилось после перезагрузки."""
+    if not old_parameters:
+        return []
+    events = []
+    for name, old in old_parameters.items():
+        row = conn.execute("SELECT value::text AS value, valid_from, source_unit_id FROM parameter "
+                           "WHERE name = %s AND valid_to IS NULL ORDER BY valid_from DESC NULLS LAST LIMIT 1", (name,)).fetchone()
+        if row and row["value"] != old["value"]:
+            events.append({"kind": "parameter_changed", "unit_id": row["source_unit_id"],
+                           "payload": {"name": name, "old": old["value"], "new": row["value"],
+                                       "valid_from": str(row["valid_from"])}})
+    return events
+
+
+def record_events(conn, events: list[dict], run_id: int | None = None, snapshot_id: int | None = None) -> int:
+    if not events or not _table_exists(conn, "corpus_event"):
+        return 0
+    with conn.transaction():
+        for e in events:
+            conn.execute(
+                "INSERT INTO corpus_event (kind, act_code, unit_id, doc_id, payload, run_id, snapshot_id) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (e["kind"], e.get("act_code"), e.get("unit_id"), e.get("doc_id"), Json(e.get("payload") or {}),
+                 run_id, snapshot_id))
+    return len(events)
 
 
 def get_unit(conn, unit_id: str, as_of_date: str) -> dict | None:

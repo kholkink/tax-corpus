@@ -453,6 +453,20 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "strict": True,
     },
     {
+        "name": "what_changed",
+        "description": "Что изменилось в норме с даты: diff прежней и текущей редакции текста (если корпус "
+                       "перезагружался), правки (list_amendments) и новые разъяснения с этой даты. Для раздела "
+                       "«Что изменилось» и при уведомлениях мониторинга.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"unit_id": {"type": "string"},
+                           "since": {"type": "string", "description": "YYYY-MM-DD"}},
+            "required": ["unit_id", "since"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
         "name": "get_position_map",
         "description": "Карта позиций по норме: что говорят о ней письма Минфина/ФНС, пленумы, обзоры и "
                        "определения ВС, акты КС — сгруппировано по stance (pro_taxpayer / pro_authority / "
@@ -636,6 +650,16 @@ def execute_tool(corpus: Corpus, name: str, args: dict, as_of: str,
             if not result:
                 result = {"unit_id": args["unit_id"], "documents": [],
                           "note": "в корпусе нет разъяснений по этой норме на дату"}
+        elif name == "what_changed":
+            conn = getattr(corpus, "conn", None)
+            if conn is not None:
+                from .monitor import render_change, what_changed
+                result = what_changed(conn, args["unit_id"], args.get("since"), as_of)
+                result["markdown"] = render_change(result)
+            else:
+                result = {"unit_id": args["unit_id"], "since": args.get("since"),
+                          "amendments_since": corpus.list_amendments(args["unit_id"], args.get("since")),
+                          "note": "офлайн-корпус: архива версий текста нет, только правки по отметкам редакции"}
         elif name == "get_position_map":
             result = corpus.get_position_map(args["unit_id"], as_of)
             if not any(result["counts"].values()):

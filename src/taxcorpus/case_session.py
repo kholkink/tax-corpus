@@ -20,6 +20,7 @@ from .citations import VerificationReport
 from .tools import TOOL_DEFINITIONS, execute_tool
 from .facts import FACT_TOOL_NAMES, FACT_TOOLS, FactStore
 from .collab import COLLAB_TOOL_NAMES, COLLAB_TOOLS, CollabStore
+from .monitor import MONITOR_TOOL_NAMES, MONITOR_TOOLS
 from .templates import TEMPLATE_TOOL_NAMES, TEMPLATE_TOOLS, draft_from_template
 from .workspace import WORKSPACE_TOOL_NAMES, WORKSPACE_TOOLS, Workspace
 
@@ -136,7 +137,7 @@ class CaseSession:
         return text
 
     def tools(self) -> list[dict]:
-        return [*TOOL_DEFINITIONS, *WORKSPACE_TOOLS, *FACT_TOOLS, *TEMPLATE_TOOLS, *COLLAB_TOOLS]
+        return [*TOOL_DEFINITIONS, *WORKSPACE_TOOLS, *FACT_TOOLS, *TEMPLATE_TOOLS, *COLLAB_TOOLS, *MONITOR_TOOLS]
 
     def _run_workspace_tool(self, name: str, args: dict) -> tuple[str, bool]:
         try:
@@ -176,6 +177,15 @@ class CaseSession:
                                               args.get("quote"), args.get("page"), args.get("role"),
                                               extracted_by="agent")
                 result = {**fact.to_dict(), "note": "факт записан как неподтверждённый; юрист подтвердит в таблице фактов"}
+            elif name == "list_notifications":
+                conn = getattr(self.agent.corpus, "conn", None)
+                if conn is None:
+                    result = {"notifications": [], "note": "мониторинг доступен только с БД"}
+                else:
+                    from .monitor import notifications
+                    result = notifications(conn, self.ws.manifest.slug, "open", 20)
+                    if not result:
+                        result = {"notifications": [], "note": "открытых уведомлений нет"}
             elif name == "list_comments":
                 result = CollabStore(self.ws).threads(args["path"], open_only=True)
                 if not result:
@@ -268,7 +278,8 @@ class CaseSession:
                 if self.redactor:  # аргументы модели содержат плейсхолдеры — вернуть реальные значения
                     args = json.loads(self._in(json.dumps(args, ensure_ascii=False)))
                 if (block.name in WORKSPACE_TOOL_NAMES or block.name in FACT_TOOL_NAMES
-                        or block.name in TEMPLATE_TOOL_NAMES or block.name in COLLAB_TOOL_NAMES):
+                        or block.name in TEMPLATE_TOOL_NAMES or block.name in COLLAB_TOOL_NAMES
+                        or block.name in MONITOR_TOOL_NAMES):
                     output, is_error = self._run_workspace_tool(block.name, args)
                 else:
                     output, is_error = execute_tool(self.agent.corpus, block.name, args, as_of,

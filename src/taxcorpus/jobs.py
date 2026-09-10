@@ -284,10 +284,20 @@ def accuracy(ctx: JobContext) -> None:
     ctx.say(f"карта точности обновлена: {data['golden_questions']} вопросов эталона")
 
 
-@job("daily", "ежедневный конвейер: краулеры -> load_docs -> check_bank_editions -> snapshot")
+@job("monitor", "события корпуса -> подписки дел -> уведомления (F2)")
+def monitor(ctx: JobContext) -> None:
+    if ctx.conn is None:
+        raise RuntimeError("нужна БД (TAXCORPUS_DB)")
+    from .monitor import match_events
+    stats = match_events(ctx.conn)
+    ctx.stats.update(stats)
+    ctx.say(f"событий {stats['events']}, уведомлений {stats['notifications']}, дел с подписками {stats['workspaces']}")
+
+
+@job("daily", "ежедневный конвейер: краулеры -> load_docs -> check_bank_editions -> snapshot -> monitor")
 def daily(ctx: JobContext) -> None:
     for name in ("crawl_fns", "crawl_minfin", "crawl_courts", "crawl_key_rate", "load_docs",
-                 "check_bank_editions", "snapshot"):
+                 "check_bank_editions", "snapshot", "monitor"):
         ctx.say(f"=== {name}")
         sub = run_job(name, [], conn=ctx.conn)
         ctx.stats[name] = {"status": sub["status"], **sub["stats"]}
