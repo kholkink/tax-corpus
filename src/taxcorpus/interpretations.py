@@ -70,6 +70,9 @@ class Document:
     mandatory: bool = False
     retrieved_at: str | None = None
     sha256: str | None = None
+    status: str | None = None          # actual | outdated (по пометке источника) | None
+    tags: list[str] | None = None      # теги источника: «Статья 200 НК РФ», категория
+    category: str | None = None
 
     @classmethod
     def from_dict(cls, d: dict) -> "Document":
@@ -82,12 +85,14 @@ class Document:
             source_url=d.get("source_url"), mandatory=bool(d.get("mandatory", False)),
             retrieved_at=d.get("retrieved_at"),
             sha256=d.get("sha256") or "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            status=d.get("status"), tags=d.get("tags"), category=d.get("category"),
         )
 
     def summary(self) -> dict:
         return {"doc_id": self.doc_id, "kind": self.kind, "agency": self.agency,
                 "number": self.number, "date": self.date, "title": self.title,
-                "mandatory": self.mandatory, "source_url": self.source_url}
+                "mandatory": self.mandatory, "status": self.status, "category": self.category,
+                "tags": self.tags, "source_url": self.source_url}
 
 
 def load_documents(path_or_dir: str | Path) -> list[Document]:
@@ -119,6 +124,16 @@ def link_document(doc: Document, index: UnitIndex) -> list[dict]:
         edges.append({"doc_id": doc.doc_id, "to_unit_id": res.unit_id, "kind": "interprets",
                       "raw_citation": ref["raw_citation"], "status": res.status,
                       "confidence": 1.0 if res.status == "resolved" else 0.7})
+    # теги источника («Статья 200 НК РФ») — явная привязка от ведомства
+    for tag in doc.tags or []:
+        m = re.match(r"Стать[яи]\s+(\d+(?:\.\d+)?(?:-\d+)?)", tag)
+        if not m:
+            continue
+        res = index.resolve_reference({"type": "unit", "article": m.group(1)}, doc.doc_id)
+        if res.unit_id and (res.unit_id, tag) not in seen:
+            seen.add((res.unit_id, tag))
+            edges.append({"doc_id": doc.doc_id, "to_unit_id": res.unit_id, "kind": "interprets",
+                          "raw_citation": tag, "status": "tag", "confidence": 1.0})
     return edges
 
 
