@@ -410,7 +410,8 @@ class FileUpload(BaseModel):
 
 
 @app.post("/workspaces/{slug}/files", status_code=201)
-def upload_file(slug: str, req: FileUpload) -> dict:
+def upload_file(slug: str, req: FileUpload, request: Request) -> dict:
+    from .collab import CollabStore
     ws = _ws(slug)
     name = os.path.basename(req.name)
     if not name:
@@ -418,6 +419,7 @@ def upload_file(slug: str, req: FileUpload) -> dict:
     target = ws.path / req.dest / name
     target.write_bytes(base64.b64decode(req.content_base64))
     rel = f"{req.dest}/{name}"
+    CollabStore(ws).log(_actor(request), "upload", rel, {"size": target.stat().st_size})
     return {"path": rel, "size": target.stat().st_size}
 
 
@@ -453,13 +455,15 @@ class DraftCreate(BaseModel):
 
 
 @app.post("/workspaces/{slug}/drafts", status_code=201)
-def create_draft(slug: str, req: DraftCreate) -> dict:
+def create_draft(slug: str, req: DraftCreate, request: Request) -> dict:
+    from .collab import CollabStore
     from .templates import draft_from_template
     ws = _ws(slug)
     try:
         result = draft_from_template(ws, req.template, req.path, req.values, ProductionCalendar.load())
     except FileNotFoundError as exc:
         raise HTTPException(404, str(exc)) from exc
+    CollabStore(ws).log(_actor(request), "draft_document", result["path"], {"template": result["template"]})
     _sync(ws)
     return result
 
@@ -474,9 +478,11 @@ class SessionMessage(BaseModel):
 
 
 @app.post("/workspaces/{slug}/sessions", status_code=201)
-def start_session(slug: str, req: SessionMessage) -> dict:
+def start_session(slug: str, req: SessionMessage, request: Request) -> dict:
     ws = _ws(slug)
     session = CaseSession(ws, make_agent(ws))
+    from .collab import CollabStore
+    CollabStore(ws).log(_actor(request), "message", f"session:{session.session_id}", {"chars": len(req.message)})
     turn = session.send(req.message)
     _sync(ws, session)
     return _turn_dict(session, turn)
@@ -608,13 +614,16 @@ def add_fact(slug: str, req: FactCreate) -> dict:
 
 
 @app.post("/workspaces/{slug}/facts/{fact_id}/confirm")
-def confirm_fact(slug: str, fact_id: int, confirmed: bool = True) -> dict:
+def confirm_fact(slug: str, fact_id: int, request: Request, confirmed: bool = True) -> dict:
+    from .collab import CollabStore
     from .facts import FactError, FactStore
     ws = _ws(slug)
     try:
         fact = FactStore(ws).confirm(fact_id, confirmed)
     except FactError as exc:
         raise HTTPException(404, str(exc)) from exc
+    CollabStore(ws).log(_actor(request), "confirm_fact" if confirmed else "unconfirm_fact", f"fact#{fact_id}",
+                        {"kind": fact.kind, "text": fact.text})
     _sync(ws)
     return fact.to_dict()
 
@@ -644,6 +653,57 @@ def derive_deadlines(slug: str, confirmed_only: bool = False, create_tasks: bool
     out = FactStore(ws).derive_deadlines(ProductionCalendar.load(), confirmed_only, create_tasks)
     _sync(ws)
     return out
+
+
+# --- совместная работа (F8) ------------------------------------------------------------------
+def _actor(request: Request) -> str:
+    p = getattr(request.state, "principal", None)
+    return f"user:{p.email}" if p and not p.local else "user:local"
+
+
+class CommentCreate(BaseModel):
+    path: str
+    text: str
+    anchor: str | None = None
+    parent_id: str | None = None
+
+
+@app.get("/workspaces/{slug}/comments")
+def list_comments(slug: str, path: str | None = None, open: bool = False) -> list[dict]:
+    from .collab import CollabStore
+    return CollabStore(_ws(slug)).list(path, open_only=open)
+
+
+@app.post("/workspaces/{slug}/comments", status_code=201)
+def add_comment(slug: str, req: CommentCreate, request: Request) -> dict:
+    from .collab import CollabStore
+    ws = _ws(slug)
+    try:
+        c = CollabStore(ws).add_comment(req.path, req.text, _actor(request), req.anchor, req.parent_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"нет файла {req.path}") from exc
+    except KeyError as exc:
+        raise HTTPException(404, f"нет комментария {req.parent_id}") from exc
+    _sync(ws)
+    return c
+
+
+@app.post("/workspaces/{slug}/comments/{comment_id}/resolve")
+def resolve_comment(slug: str, comment_id: str, request: Request, resolved: bool = True) -> dict:
+    from .collab import CollabStore
+    ws = _ws(slug)
+    try:
+        c = CollabStore(ws).resolve(comment_id, _actor(request), resolved)
+    except KeyError as exc:
+        raise HTTPException(404, f"нет комментария {comment_id}") from exc
+    _sync(ws)
+    return c
+
+
+@app.get("/workspaces/{slug}/activity")
+def activity(slug: str, limit: int = Query(50, ge=1, le=500)) -> list[dict]:
+    from .collab import CollabStore
+    return CollabStore(_ws(slug)).activity(limit)
 
 
 class WorkspaceAudit(BaseModel):
