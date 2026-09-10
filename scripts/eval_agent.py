@@ -25,6 +25,41 @@ from taxcorpus.tools import DbCorpus, LocalCorpus  # noqa: E402
 GOLDEN = json.loads((ROOT / "tests" / "golden" / "golden_v0.json").read_text(encoding="utf-8"))
 
 
+def _write_reports(args, runs: list[dict]) -> None:
+    from taxcorpus.evaluation import QuestionScore
+    summary = EvalSummary([QuestionScore(**r["score"]) for r in runs])
+    (ROOT / "reports" / "eval_agent.json").write_text(
+        json.dumps({"as_of": args.as_of, "model": args.model, "summary": summary.as_dict(),
+                    "runs": runs}, ensure_ascii=False, indent=2), encoding="utf-8")
+    (ROOT / "reports" / "eval_agent.md").write_text(
+        f"# Оценка агента на эталоне ({args.model}, as_of {args.as_of})\n\n" + summary.render() + "\n",
+        encoding="utf-8")
+    print(summary.render())
+
+
+def rescore(args) -> int:
+    """Пересчёт метрик по сохранённым ответам: изменилась метрика или эталон — модель не нужна."""
+    import os
+    from taxcorpus import load_dotenv
+    load_dotenv(str(ROOT / ".env"))
+    args.model = args.model or os.environ.get("TAXCORPUS_MODEL") or "claude-opus-5"
+    runs_path = ROOT / "reports" / "eval_agent_runs.jsonl"
+    by_id = {q["id"]: q for q in GOLDEN["questions"]}
+    runs = []
+    for line in runs_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        r = json.loads(line)
+        q = by_id.get(r["question"]["id"], r["question"])
+        res = r["result"]
+        score = score_answer(q["id"], q["expected"], res["answer"], res["verification"]["checks"],
+                             reworked=res["reworked"], tool_calls=len(res["tool_calls"]),
+                             expected_abstain=q["kind"] == "agent_abstain")
+        runs.append({**r, "question": q, "score": score.__dict__})
+    _write_reports(args, runs)
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--local", action="store_true")
@@ -34,7 +69,11 @@ def main() -> int:
     ap.add_argument("--effort", default="high")
     ap.add_argument("--db-url", default=None)
     ap.add_argument("--no-resume", action="store_true", help="не пропускать уже оценённые вопросы")
+    ap.add_argument("--rescore", action="store_true",
+                    help="только пересчитать метрики по reports/eval_agent_runs.jsonl (без модели)")
     args = ap.parse_args()
+    if args.rescore:
+        return rescore(args)
 
     import anthropic
     from taxcorpus import load_dotenv
@@ -91,17 +130,7 @@ def main() -> int:
         if conn is not None:
             conn.close()
 
-    from taxcorpus.evaluation import QuestionScore
-    summary.scores = [QuestionScore(**r["score"]) for r in runs]
-    out_json = ROOT / "reports" / "eval_agent.json"
-    out_md = ROOT / "reports" / "eval_agent.md"
-    out_json.write_text(json.dumps({"as_of": args.as_of, "model": args.model,
-                                    "summary": summary.as_dict(), "runs": runs},
-                                   ensure_ascii=False, indent=2), encoding="utf-8")
-    out_md.write_text(f"# Оценка агента на эталоне ({args.model}, as_of {args.as_of})\n\n"
-                      + summary.render() + "\n", encoding="utf-8")
-    print(summary.render())
-    print(f"\nзаписано: {out_json}, {out_md}")
+    _write_reports(args, runs)
     return 0
 
 

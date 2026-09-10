@@ -55,3 +55,13 @@ def test_article_of_unit_id_handles_chapter_section_and_bare_ids():
     assert article_of_unit_id("nk1.art10.p3") == "nk1.art10"
     assert article_of_unit_id("nk2.ch23.art227-1@2.p1") == "nk2.ch23.art227-1@2"
     assert article_of_unit_id("nk1.ch14") == "nk1.ch14"
+
+
+def test_documents_excluded_and_precision_undefined_without_expected():
+    checks = [_check("п. 2 ст. 88 НК РФ", "nk1.ch14.art88.p2", "ok"),
+              {"raw": "письмо ФНС от 01.01.2024 № 1", "unit_id": "fns-1", "status": "ok", "depth": "document"}]
+    s = score_answer("q", ["nk1.ch14.art88.p2"], "", checks)
+    assert s.cited == ["nk1.ch14.art88.p2"] and s.precision_unit == 1.0
+    s = score_answer("q", [], "**Вывод** нормы отменены", checks)
+    assert s.precision_unit is None and s.recall_unit is None and not s.abstained
+    assert score_answer("q", [], "В корпусе нет документа с такими реквизитами", []).abstained
