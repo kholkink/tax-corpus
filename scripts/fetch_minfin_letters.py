@@ -203,6 +203,9 @@ def main() -> int:
         for line in out.read_text(encoding="utf-8").splitlines():
             if line.strip():
                 done.add(json.loads(line)["doc_id"])
+    # документы без текстового слоя (только pdf) — запоминаем, чтобы не качать заново
+    skipped_path = out.with_name("minfin_skipped.txt")
+    skipped: set[str] = set(skipped_path.read_text(encoding="utf-8").split()) if skipped_path.exists() else set()
 
     fetched = 0
     with out.open("a", encoding="utf-8") as fh:
@@ -218,7 +221,7 @@ def main() -> int:
                 ids, total = parse_category(listing)
                 print(f"{cat} стр. {page_no}/{total}: {len(ids)} документов", flush=True)
                 for doc_id in ids:
-                    if f"minfin-{doc_id}" in done:
+                    if f"minfin-{doc_id}" in done or doc_id in skipped:
                         continue
                     if args.max is not None and fetched >= args.max:
                         print(f"достигнут --max {args.max}")
@@ -233,6 +236,8 @@ def main() -> int:
                     doc = parse_document(page, doc_id, doc_url, args.delay)
                     if doc is None:
                         print(f"[warn] {doc_url}: не распознано", file=sys.stderr)
+                        skipped.add(doc_id)
+                        skipped_path.write_text("\n".join(sorted(skipped)) + "\n", encoding="utf-8")
                         continue
                     doc["retrieved_at"] = datetime.now(timezone.utc).isoformat()
                     doc["sha256"] = "sha256:" + hashlib.sha256(page.encode("utf-8")).hexdigest()

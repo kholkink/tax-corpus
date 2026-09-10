@@ -16,7 +16,9 @@ from dataclasses import dataclass, field
 
 from .resolver import article_of_unit_id
 
-ABSTAIN_MARKERS = ("нет достаточных оснований", "не могу ответить", "недостаточно оснований")
+ABSTAIN_MARKERS = ("нет достаточных оснований", "не могу ответить", "недостаточно оснований",
+                   "нет документа", "отсутствует в реестре", "не могу подтвердить",
+                   "ответить по существу не могу")
 
 
 @dataclass
@@ -49,7 +51,9 @@ def score_answer(qid: str, expected: list[str], answer: str, checks: list[dict],
                  reworked: bool = False, tool_calls: int = 0,
                  expected_abstain: bool = False) -> QuestionScore:
     """checks — VerificationReport.checks в виде словарей (raw, unit_id, status)."""
-    ok_units = sorted({c["unit_id"] for c in checks if c.get("status") == "ok" and c.get("unit_id")})
+    # в precision/recall участвуют только нормы; письма/пленумы (depth == document) — отдельный слой
+    ok_units = sorted({c["unit_id"] for c in checks
+                       if c.get("status") == "ok" and c.get("unit_id") and c.get("depth") != "document"})
     hallucinations = sum(1 for c in checks if c.get("status") in ("unresolved", "not_in_force"))
     temporal_ok = not any(c.get("status") == "not_in_force" for c in checks)
     abstained = any(m in answer.lower() for m in ABSTAIN_MARKERS)
@@ -64,11 +68,15 @@ def score_answer(qid: str, expected: list[str], answer: str, checks: list[dict],
 
     p_unit_hits = sum(1 for c in ok_units if any(covers(c, e) for e in exp_units))
     r_unit_hits = sum(1 for e in exp_units if any(covers(c, e) for c in ok_units))
+    # без ожидаемых норм (ловушки на отказ) precision не определена
+    p_unit = _ratio(p_unit_hits, len(ok_units)) if exp_units else None
+    p_art = (_ratio(sum(1 for a in cited_articles if a in exp_articles), len(cited_articles))
+             if exp_units else None)
     return QuestionScore(
         qid=qid, expected=sorted(exp_units), cited=ok_units,
-        precision_unit=_ratio(p_unit_hits, len(ok_units)),
+        precision_unit=p_unit,
         recall_unit=_ratio(r_unit_hits, len(exp_units)),
-        precision_article=_ratio(sum(1 for a in cited_articles if a in exp_articles), len(cited_articles)),
+        precision_article=p_art,
         recall_article=_ratio(sum(1 for a in exp_articles if a in cited_articles), len(exp_articles)),
         hallucinations=hallucinations, temporal_ok=temporal_ok, abstained=abstained,
         expected_abstain=expected_abstain, reworked=reworked, tool_calls=tool_calls,
