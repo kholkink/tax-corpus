@@ -129,3 +129,150 @@ def ask(req: AskRequest) -> dict[str, Any]:
     agent = TaxAgent(anthropic.Anthropic(), corpus(), model=model, effort=req.effort,
                      fallbacks=not os.environ.get("ANTHROPIC_BASE_URL"))
     return agent.ask(req.question, req.as_of).to_dict()
+
+
+# --- рабочее пространство дела (docs/workspace-plan.md, фаза A4) ---------------------------
+
+import base64  # noqa: E402
+
+from .case_session import CaseSession  # noqa: E402
+from .workspace import Workspace  # noqa: E402
+
+WORKSPACES_ROOT = os.environ.get("TAXCORPUS_WORKSPACES", "workspaces")
+
+
+def make_agent():
+    """Агент для сессий дела (подменяется в тестах)."""
+    import anthropic
+    from . import load_dotenv
+    from .agent import TaxAgent
+    load_dotenv()
+    return TaxAgent(anthropic.Anthropic(max_retries=4), corpus(),
+                    model=os.environ.get("TAXCORPUS_MODEL") or "claude-opus-5",
+                    fallbacks=not os.environ.get("ANTHROPIC_BASE_URL"),
+                    calendar=ProductionCalendar.load())
+
+
+def _ws(slug: str) -> Workspace:
+    try:
+        return Workspace.open(slug, WORKSPACES_ROOT)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+def _turn_dict(session: CaseSession, turn) -> dict:
+    return {"session_id": session.session_id, "status": session.status, "kind": turn.kind,
+            "text": turn.text, "question": turn.question,
+            "verification": ({"ok": turn.verification.ok,
+                              "checks": [c.__dict__ for c in turn.verification.checks]}
+                             if turn.verification else None),
+            "files_written": turn.files_written, "tool_calls": len(session.tool_log)}
+
+
+class WorkspaceCreate(BaseModel):
+    slug: str
+    title: str
+    client: str = ""
+    as_of: date | None = None
+    jurisdiction: str | None = None
+
+
+@app.get("/workspaces")
+def list_workspaces() -> list[dict]:
+    return Workspace.list_all(WORKSPACES_ROOT)
+
+
+@app.post("/workspaces", status_code=201)
+def create_workspace(req: WorkspaceCreate) -> dict:
+    try:
+        ws = Workspace.create(req.slug, req.title, client=req.client,
+                              as_of=req.as_of.isoformat() if req.as_of else None,
+                              root=WORKSPACES_ROOT, jurisdiction=req.jurisdiction)
+    except (ValueError, FileExistsError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return ws.manifest.to_dict()
+
+
+@app.get("/workspaces/{slug}")
+def get_workspace(slug: str) -> dict:
+    ws = _ws(slug)
+    return {"manifest": ws.manifest.to_dict(), "files": ws.list_files(), "tasks": ws.tasks(),
+            "sessions": CaseSession.list_sessions(ws)}
+
+
+class FileUpload(BaseModel):
+    name: str
+    content_base64: str
+    dest: str = Field("inbox", pattern="^(inbox|notes)$")
+
+
+@app.post("/workspaces/{slug}/files", status_code=201)
+def upload_file(slug: str, req: FileUpload) -> dict:
+    ws = _ws(slug)
+    name = os.path.basename(req.name)
+    if not name:
+        raise HTTPException(400, "пустое имя файла")
+    target = ws.path / req.dest / name
+    target.write_bytes(base64.b64decode(req.content_base64))
+    rel = f"{req.dest}/{name}"
+    return {"path": rel, "size": target.stat().st_size}
+
+
+@app.get("/workspaces/{slug}/files/{path:path}")
+def read_workspace_file(slug: str, path: str, offset: int = 0, max_chars: int = 20000) -> dict:
+    ws = _ws(slug)
+    try:
+        return ws.read_file(path, offset, max_chars)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"нет файла {path}") from exc
+    except (PermissionError, RuntimeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/workspaces/{slug}/search")
+def search_workspace_files(slug: str, q: str, limit: int = Query(5, ge=1, le=20)) -> list[dict]:
+    return _ws(slug).search_files(q, limit)
+
+
+class SessionMessage(BaseModel):
+    message: str
+
+
+@app.post("/workspaces/{slug}/sessions", status_code=201)
+def start_session(slug: str, req: SessionMessage) -> dict:
+    ws = _ws(slug)
+    session = CaseSession(ws, make_agent())
+    turn = session.send(req.message)
+    return _turn_dict(session, turn)
+
+
+@app.get("/workspaces/{slug}/sessions/{session_id}")
+def get_session(slug: str, session_id: str) -> dict:
+    ws = _ws(slug)
+    try:
+        session = CaseSession.load(ws, make_agent(), session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, "нет такой сессии") from exc
+    # для клиента: только видимые реплики (тексты пользователя и ответы агента), вопросы, журнал
+    visible = []
+    for m in session.messages:
+        if m["role"] == "user" and isinstance(m["content"], str):
+            visible.append({"role": "user", "text": m["content"]})
+        elif m["role"] == "assistant":
+            text = "\n".join(b.get("text", "") for b in m["content"] if isinstance(b, dict) and b.get("type") == "text")
+            if text.strip():
+                visible.append({"role": "agent", "text": text})
+    return {"session_id": session.session_id, "status": session.status, "pending": session.pending,
+            "questions": session.questions, "messages": visible, "tool_log": session.tool_log,
+            "files_written": session.files_written}
+
+
+@app.post("/workspaces/{slug}/sessions/{session_id}/messages")
+def continue_session(slug: str, session_id: str, req: SessionMessage) -> dict:
+    ws = _ws(slug)
+    try:
+        session = CaseSession.load(ws, make_agent(), session_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, "нет такой сессии") from exc
+    turn = session.send(req.message)  # при waiting_user это ответ на вопрос агента
+    return _turn_dict(session, turn)
