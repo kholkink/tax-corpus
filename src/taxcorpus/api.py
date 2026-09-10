@@ -10,6 +10,9 @@ data/processed (LocalCorpus, поиск грубый). Агент (/ask) тре�
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import os
 from datetime import date
 from functools import lru_cache
@@ -61,6 +64,20 @@ def health() -> dict:
     except Exception as exc:  # noqa: BLE001
         out["provider"] = {"error": str(exc)}
     return out
+
+
+ACCURACY_PATH = Path(__file__).resolve().parents[2] / "reports" / "accuracy.json"
+
+
+@app.get("/accuracy")
+def accuracy(format: str = "json"):
+    """Публичная карта точности (F11): метрики агента по темам и качество поиска на эталоне."""
+    if not ACCURACY_PATH.exists():
+        raise HTTPException(404, "карта точности ещё не собрана: python scripts/eval_agent.py --accuracy")
+    if format == "md":
+        md = ACCURACY_PATH.with_suffix(".md")
+        return HTMLResponse(f"<pre style='white-space:pre-wrap;font:14px system-ui'>{md.read_text(encoding='utf-8')}</pre>")
+    return json.loads(ACCURACY_PATH.read_text(encoding="utf-8"))
 
 
 @app.get("/units/{unit_id}")

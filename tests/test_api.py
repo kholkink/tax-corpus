@@ -95,3 +95,16 @@ def test_audit_endpoint():
     body = r.json()
     assert body["counts"] == {"ok": 1, "stale": 1} and "<mark" in body["html"] and "НЕ ДЕЙСТВУЕТ" in body["markdown"]
     assert client.post("/audit", json={}).status_code == 400
+
+
+def test_accuracy_endpoint(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from taxcorpus import api
+    c = TestClient(api.app)
+    monkeypatch.setattr(api, "ACCURACY_PATH", tmp_path / "accuracy.json")
+    assert c.get("/accuracy").status_code == 404
+    (tmp_path / "accuracy.json").write_text('{"golden_questions": 3, "agent": null}', encoding="utf-8")
+    (tmp_path / "accuracy.md").write_text("# Карта точности\n", encoding="utf-8")
+    assert c.get("/accuracy").json()["golden_questions"] == 3
+    r = c.get("/accuracy?format=md")
+    assert r.status_code == 200 and "Карта точности" in r.text

@@ -25,16 +25,44 @@ from taxcorpus.tools import DbCorpus, LocalCorpus  # noqa: E402
 GOLDEN = json.loads((ROOT / "tests" / "golden" / "golden_v0.json").read_text(encoding="utf-8"))
 
 
+def _score_run(q: dict, res: dict, rep: int = 0):
+    return score_answer(q["id"], q["expected"], res["answer"], res["verification"]["checks"],
+                        reworked=res["reworked"], tool_calls=len(res["tool_calls"]),
+                        expected_abstain=q["kind"] == "agent_abstain", topic=q.get("topic"), rep=rep)
+
+
 def _write_reports(args, runs: list[dict]) -> None:
     from taxcorpus.evaluation import QuestionScore
-    summary = EvalSummary([QuestionScore(**r["score"]) for r in runs])
+    summary = EvalSummary([QuestionScore(**{k: v for k, v in r["score"].items()
+                                          if k in QuestionScore.__dataclass_fields__}) for r in runs])
     (ROOT / "reports" / "eval_agent.json").write_text(
         json.dumps({"as_of": args.as_of, "model": args.model, "summary": summary.as_dict(),
-                    "runs": runs}, ensure_ascii=False, indent=2), encoding="utf-8")
+                    "by_topic": summary.by_topic(), "runs": runs}, ensure_ascii=False, indent=2), encoding="utf-8")
     (ROOT / "reports" / "eval_agent.md").write_text(
         f"# Оценка агента на эталоне ({args.model}, as_of {args.as_of})\n\n" + summary.render() + "\n",
         encoding="utf-8")
     print(summary.render())
+    write_accuracy()
+
+
+def write_accuracy() -> dict:
+    """reports/accuracy.{json,md} — публичная карта точности (F11) из уже сохранённых отчётов."""
+    from taxcorpus.evaluation import accuracy_report
+    reports = ROOT / "reports"
+    agent = json.loads((reports / "eval_agent.json").read_text(encoding="utf-8")) if (reports / "eval_agent.json").exists() else None
+    search = json.loads((reports / "eval_search.json").read_text(encoding="utf-8")) if (reports / "eval_search.json").exists() else None
+    snapshot = None
+    try:
+        from taxcorpus.db import connect, latest_snapshot
+        conn = connect()
+        snapshot = latest_snapshot(conn)
+        conn.close()
+    except Exception:  # noqa: BLE001 — карта строится и без БД
+        pass
+    data, md = accuracy_report(agent, search, GOLDEN, snapshot)
+    (reports / "accuracy.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    (reports / "accuracy.md").write_text(md + "\n", encoding="utf-8")
+    return data
 
 
 def rescore(args) -> int:
@@ -51,10 +79,7 @@ def rescore(args) -> int:
             continue
         r = json.loads(line)
         q = by_id.get(r["question"]["id"], r["question"])
-        res = r["result"]
-        score = score_answer(q["id"], q["expected"], res["answer"], res["verification"]["checks"],
-                             reworked=res["reworked"], tool_calls=len(res["tool_calls"]),
-                             expected_abstain=q["kind"] == "agent_abstain")
+        score = _score_run(q, r["result"], r.get("rep", 0))
         runs.append({**r, "question": q, "score": score.__dict__})
     _write_reports(args, runs)
     return 0
@@ -72,7 +97,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-resume", action="store_true", help="не пропускать уже оценённые вопросы")
     ap.add_argument("--rescore", action="store_true",
                     help="только пересчитать метрики по reports/eval_agent_runs.jsonl (без модели)")
+    ap.add_argument("--accuracy", action="store_true", help="только собрать reports/accuracy.{json,md}")
+    ap.add_argument("--repeat", type=int, default=1, help="повторов на вопрос (разброс модели), по умолчанию 1")
+    ap.add_argument("--topic", default=None, help="только вопросы этой темы эталона")
     args = ap.parse_args(argv)
+    if args.accuracy:
+        print(json.dumps({k: v for k, v in write_accuracy().items() if k != "search"}, ensure_ascii=False)[:600])
+        return 0
     if args.rescore:
         return rescore(args)
 
@@ -96,6 +127,8 @@ def main(argv: list[str] | None = None) -> int:
     agent = TaxAgent(client, corpus, model=args.model, effort=args.effort, fallbacks=fallbacks)
 
     questions = [q for q in GOLDEN["questions"] if q["kind"] in ("search", "agent", "agent_abstain")]
+    if args.topic:
+        questions = [q for q in questions if q.get("topic") == args.topic]
     if args.limit:
         questions = questions[: args.limit]
 
@@ -106,30 +139,30 @@ def main(argv: list[str] | None = None) -> int:
     if runs_path.exists() and not args.no_resume:
         runs = [json.loads(l) for l in runs_path.read_text(encoding="utf-8").splitlines() if l.strip()]
         runs = [r for r in runs if r.get("model") == args.model and r.get("as_of") == args.as_of]
-    done = {r["question"]["id"] for r in runs}
+    done = {(r["question"]["id"], r.get("rep", 0)) for r in runs}
     summary = EvalSummary()
     try:
         with runs_path.open("a", encoding="utf-8") as fh:
-            for q in questions:
-                if q["id"] in done:
-                    continue
-                print(f"=== {q['id']} {q['question']}", flush=True)
-                try:
-                    result = agent.ask(q["question"], args.as_of)
-                except Exception as exc:  # noqa: BLE001 — один сбой не должен ронять прогон
-                    print(f"    [error] {type(exc).__name__}: {str(exc)[:160]}", flush=True)
-                    continue
-                checks = [c.__dict__ for c in result.verification.checks]
-                score = score_answer(q["id"], q["expected"], result.answer, checks,
-                                     reworked=result.reworked, tool_calls=len(result.tool_calls),
-                                     expected_abstain=q["kind"] == "agent_abstain")
-                run = {"question": q, "result": result.to_dict(), "score": score.__dict__,
-                       "model": args.model, "as_of": args.as_of}
-                runs.append(run)
-                fh.write(json.dumps(run, ensure_ascii=False) + "\n")
-                fh.flush()
-                print(f"    P/R unit {score.precision_unit}/{score.recall_unit}, "
-                      f"галлюцинаций {score.hallucinations}, вызовов {score.tool_calls}", flush=True)
+            for rep in range(args.repeat):
+                for q in questions:
+                    if (q["id"], rep) in done:
+                        continue
+                    print(f"=== {q['id']}" + (f" (повтор {rep + 1})" if args.repeat > 1 else "") + f" {q['question']}", flush=True)
+                    try:
+                        result = agent.ask(q["question"], args.as_of)
+                    except Exception as exc:  # noqa: BLE001 — один сбой не должен ронять прогон
+                        print(f"    [error] {type(exc).__name__}: {str(exc)[:160]}", flush=True)
+                        continue
+                    res = result.to_dict()
+                    res["verification"]["checks"] = [c.__dict__ for c in result.verification.checks]
+                    score = _score_run(q, res, rep)
+                    run = {"question": q, "result": res, "score": score.__dict__,
+                           "model": args.model, "as_of": args.as_of, "rep": rep}
+                    runs.append(run)
+                    fh.write(json.dumps(run, ensure_ascii=False) + "\n")
+                    fh.flush()
+                    print(f"    P/R unit {score.precision_unit}/{score.recall_unit}, "
+                          f"галлюцинаций {score.hallucinations}, вызовов {score.tool_calls}", flush=True)
     finally:
         if conn is not None:
             conn.close()
