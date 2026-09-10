@@ -32,11 +32,35 @@ def connect(db_url: str | None = None) -> psycopg.Connection:
     return psycopg.connect(url, row_factory=dict_row, autocommit=True)
 
 
-def ensure_schema(conn: psycopg.Connection, schema_path: str | Path | None = None) -> None:
-    path = Path(schema_path) if schema_path else \
-        Path(__file__).resolve().parents[2] / "sql" / "schema.sql"
+SQL_DIR = Path(__file__).resolve().parents[2] / "sql"
+
+
+def ensure_schema(conn: psycopg.Connection, schema_path: str | Path | None = None) -> list[str]:
+    """Базовая схема (schema.sql, идемпотентна) + нумерованные миграции sql/migrations/NNN_*.sql,
+    каждая применяется один раз и записывается в schema_version (P2 плана ПО).
+    Возвращает список применённых миграций."""
+    path = Path(schema_path) if schema_path else SQL_DIR / "schema.sql"
     with conn.transaction():
         conn.execute(path.read_text(encoding="utf-8"))
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS schema_version (
+                name       TEXT PRIMARY KEY,
+                applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+    applied = {r["name"] for r in conn.execute("SELECT name FROM schema_version").fetchall()}
+    migrations_dir = path.parent / "migrations"
+    done: list[str] = []
+    for mig in sorted(migrations_dir.glob("[0-9][0-9][0-9]_*.sql")) if migrations_dir.is_dir() else []:
+        if mig.name in applied:
+            continue
+        with conn.transaction():
+            conn.execute(mig.read_text(encoding="utf-8"))
+            conn.execute("INSERT INTO schema_version (name) VALUES (%s)", (mig.name,))
+        done.append(mig.name)
+    return done
 
 
 def load_corpus(conn: psycopg.Connection, meta: dict, units: list[dict],

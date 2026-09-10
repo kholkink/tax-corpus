@@ -34,11 +34,14 @@ src/taxcorpus/
   embeddings.py — DenseIndex (e5-small, npz-матрица), rrf(); tools.HybridSearch — слияние
   textract.py   — текст из docx/pdf/xlsx/md/html; workspace.py — дело, файлы, версии, задачи,
                   инструменты дела; case_session.py — персистентная сессия агента в деле (ask_user)
+  audit.py      — аудит документа (F1); workspace_store.py — зеркало метаданных дел в БД (P1)
   api.py        — FastAPI: /units, /search, /resolve, /parameters, /terms, /interpretations,
                   /deadline, /ask
-  cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term / deadline / ask / load-docs / interpretations / embed / workspace
-sql/schema.sql  — Act / Edition / Unit / UnitText / Reference / Amendment / Parameter / Term /
-                  raw_document / parse_run
+  cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term / deadline / ask / load-docs / interpretations / embed / workspace / audit
+sql/schema.sql  — базовая схема (идемпотентна): Act / Edition / Unit / UnitText / Reference /
+                  Amendment / Parameter / Term / Document / Snapshot; sql/migrations/NNN_*.sql —
+                  нумерованные миграции, применяются один раз (schema_version); 001 — метаданные
+                  дел (workspace, workspace_file, session, session_question, audit)
 tests/          — pytest: идеализированный формат, формат банка ГАС, валидатор, нормализация
 scripts/setup_postgres.sh — локальный PostgreSQL 16 без прав администратора
 ```
@@ -155,6 +158,11 @@ python -m taxcorpus workspace add --slug delo1 акт.docx требование.
 python -m taxcorpus workspace chat --slug delo1                              # REPL: /files /tasks /quit
 python -m taxcorpus workspace chat --slug delo1 --message "Подготовь позицию по notes/задача.md"
 python -m taxcorpus workspace chat --slug delo1 --session <id> --message "ответ на вопрос агента"
+
+# аудит документа (F1 плана ПО): свой или чужой меморандум -> по каждой ссылке статус на дату,
+# правки после даты документа, снятые письма, не упомянутые обязательные письма ФНС;
+# в UI — вкладка «Аудит документа», в деле — инструмент audit_document, API POST /audit
+python -m taxcorpus audit --file меморандум.docx --as-of 2026-09-10 --doc-date 2024-01-01
 
 # оценка агента на эталоне (метрики §6 плана: citation precision/recall, hallucination
 # rate, temporal correctness, abstention; каждый вопрос — платный запрос к модели):

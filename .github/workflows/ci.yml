@@ -1,0 +1,23 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install -e ".[dev,api]"
+      - name: Unit and API tests
+        # тесты эталона по корпусу и БД пропускаются: data/processed и Postgres в CI нет
+        run: python -m pytest -q
+      - name: Search evaluation (only if corpus and index are present)
+        if: hashFiles('data/processed/nk1_units.jsonl') != ''
+        run: python scripts/eval_search.py

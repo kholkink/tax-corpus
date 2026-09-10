@@ -86,3 +86,12 @@ def test_ui_page_served():
     client = TestClient(api.app)
     r = client.get("/")
     assert r.status_code == 200 and "рабочее пространство" in r.text and "/workspaces" in r.text
+
+
+def test_audit_endpoint():
+    client = TestClient(api.app)
+    r = client.post("/audit", json={"text": "См. п. 2 ст. 88 НК РФ и п. 3 ст. 88 НК РФ.", "as_of": "2026-09-10"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["counts"] == {"ok": 1, "stale": 1} and "<mark" in body["html"] and "НЕ ДЕЙСТВУЕТ" in body["markdown"]
+    assert client.post("/audit", json={}).status_code == 400

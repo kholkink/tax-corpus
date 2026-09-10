@@ -265,6 +265,17 @@ WORKSPACE_TOOLS: list[dict] = [
                                      "options": {"type": "array", "items": {"type": "string"}}},
                       "required": ["question"], "additionalProperties": False},
      "strict": True},
+    {"name": "audit_document",
+     "description": "Аудит файла дела (свой или чужой меморандум, возражения, консультация): по "
+                    "каждой ссылке — существует ли норма, действует ли на дату дела, менялась ли "
+                    "после даты документа, сняты ли письма по ней; какие обязательные письма ФНС не "
+                    "упомянуты. Отчёт сохраняется в research/аудит-<файл>.md.",
+     "input_schema": {"type": "object",
+                      "properties": {"path": {"type": "string"},
+                                     "doc_date": {"type": ["string", "null"],
+                                                  "description": "дата документа YYYY-MM-DD или null"}},
+                      "required": ["path", "doc_date"], "additionalProperties": False},
+     "strict": True},
     {"name": "create_task",
      "description": "Поставить юристу задачу (собрать документ, запросить у клиента, проверить "
                     "факт), при необходимости с датой.",

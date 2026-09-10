@@ -105,3 +105,23 @@ def test_parameter_terms_interpretations_snapshot():
         assert found and found[0]["snippet"]
         snap = create_snapshot(conn, "test")
         assert snap["counts"]["unit"] > 30000 and snap["snapshot_id"] >= 1
+
+
+def test_migrations_apply_once_and_workspace_store_syncs(tmp_path):
+    from taxcorpus.db import ensure_schema
+    from taxcorpus.workspace import Workspace
+    from taxcorpus.workspace_store import subscriptions_for, sync_workspace
+
+    with _conn() as conn:
+        ensure_schema(conn)
+        assert ensure_schema(conn) == []  # повторно ничего не применяется
+        names = {r["name"] for r in conn.execute("SELECT name FROM schema_version").fetchall()}
+        assert "001_workspace_metadata.sql" in names
+        ws = Workspace.create("it-sync", "Интеграционное дело", as_of="2026-09-10", root=tmp_path)
+        ws.write_file("research/позиция.md", "текст", {"sources": ["nk1.ch14.art88.p2", "fns-1"]})
+        info = sync_workspace(conn, ws)
+        assert info["files"] >= 2
+        assert subscriptions_for(conn, info["workspace_id"]) == ["fns-1", "nk1.ch14.art88.p2"]
+        # повторная синхронизация идемпотентна
+        assert sync_workspace(conn, ws)["workspace_id"] == info["workspace_id"]
+        conn.execute("DELETE FROM workspace WHERE slug = 'it-sync'")

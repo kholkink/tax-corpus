@@ -170,6 +170,22 @@ def _ws(slug: str) -> Workspace:
         raise HTTPException(404, str(exc)) from exc
 
 
+def _sync(ws: Workspace, session: CaseSession | None = None) -> None:
+    """Зеркало метаданных дела в БД (P1), если бэкенд — PostgreSQL."""
+    c = corpus()
+    conn = getattr(c, "conn", None)
+    if conn is None:
+        return
+    try:
+        from .workspace_store import sync_workspace, upsert_session
+        info = sync_workspace(conn, ws)
+        if session is not None:
+            upsert_session(conn, info["workspace_id"], session)
+    except Exception as exc:  # noqa: BLE001 — зеркало не должно ломать работу с файлами
+        import logging
+        logging.getLogger(__name__).warning("workspace sync failed: %s", exc)
+
+
 def _turn_dict(session: CaseSession, turn) -> dict:
     return {"session_id": session.session_id, "status": session.status, "kind": turn.kind,
             "text": turn.text, "question": turn.question,
@@ -206,6 +222,7 @@ def create_workspace(req: WorkspaceCreate) -> dict:
 @app.get("/workspaces/{slug}")
 def get_workspace(slug: str) -> dict:
     ws = _ws(slug)
+    _sync(ws)
     return {"manifest": ws.manifest.to_dict(), "files": ws.list_files(), "tasks": ws.tasks(),
             "sessions": CaseSession.list_sessions(ws)}
 
@@ -253,6 +270,7 @@ def start_session(slug: str, req: SessionMessage) -> dict:
     ws = _ws(slug)
     session = CaseSession(ws, make_agent())
     turn = session.send(req.message)
+    _sync(ws, session)
     return _turn_dict(session, turn)
 
 
@@ -285,4 +303,85 @@ def continue_session(slug: str, session_id: str, req: SessionMessage) -> dict:
     except FileNotFoundError as exc:
         raise HTTPException(404, "нет такой сессии") from exc
     turn = session.send(req.message)  # при waiting_user это ответ на вопрос агента
+    _sync(ws, session)
     return _turn_dict(session, turn)
+
+
+# --- аудит документа (F1) --------------------------------------------------------------
+
+class AuditRequest(BaseModel):
+    text: str | None = None
+    content_base64: str | None = None
+    name: str | None = None
+    as_of: date | None = None
+    doc_date: date | None = None
+
+
+def _audit_from_request(req: AuditRequest) -> tuple[str, str]:
+    from .textract import extract_text
+    if req.text:
+        return req.text, "text"
+    if req.content_base64 and req.name:
+        import tempfile
+        from pathlib import Path as _P
+        suffix = _P(req.name).suffix or ".txt"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp.write(base64.b64decode(req.content_base64))
+            tmp_path = tmp.name
+        try:
+            return extract_text(tmp_path), req.name
+        except RuntimeError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        finally:
+            os.unlink(tmp_path)
+    raise HTTPException(400, "нужен text или content_base64 с name")
+
+
+def _run_audit(text: str, source: str, as_of: date | None, doc_date: date | None,
+               workspace_id: int | None = None) -> dict:
+    from .audit import audit_text, render_html, render_markdown
+    as_of_s = _as_of(as_of.isoformat() if as_of else None)
+    report = audit_text(corpus(), text, as_of_s, doc_date.isoformat() if doc_date else None)
+    conn = getattr(corpus(), "conn", None)
+    audit_id = None
+    if conn is not None:
+        try:
+            from psycopg.types.json import Json
+            row = conn.execute(
+                "INSERT INTO audit (workspace_id, source, text_sha256, as_of, doc_date, report) "
+                "VALUES (%s, %s, %s, %s, %s, %s) RETURNING audit_id",
+                (workspace_id, source, report.text_sha256, as_of_s,
+                 doc_date.isoformat() if doc_date else None, Json(report.to_dict()))).fetchone()
+            audit_id = row["audit_id"]
+        except Exception as exc:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).warning("audit save failed: %s", exc)
+    return {"audit_id": audit_id, **report.to_dict(), "markdown": render_markdown(report),
+            "html": render_html(report, text)}
+
+
+@app.post("/audit")
+def audit(req: AuditRequest) -> dict:
+    """Аудит текста или файла: статус каждой ссылки на дату, правки после даты документа, письма."""
+    text, source = _audit_from_request(req)
+    return _run_audit(text, source, req.as_of, req.doc_date)
+
+
+class WorkspaceAudit(BaseModel):
+    path: str
+    doc_date: date | None = None
+
+
+@app.post("/workspaces/{slug}/audit")
+def audit_workspace_file(slug: str, req: WorkspaceAudit) -> dict:
+    ws = _ws(slug)
+    try:
+        text = ws.text_of(req.path)
+    except FileNotFoundError as exc:
+        raise HTTPException(404, f"нет файла {req.path}") from exc
+    result = _run_audit(text, req.path, date.fromisoformat(ws.manifest.as_of), req.doc_date)
+    from pathlib import Path as _P
+    out_path = "research/аудит-" + _P(req.path).stem + ".md"
+    ws.write_file(out_path, result["markdown"], {"summary": f"аудит {req.path}", "audit": result["counts"]})
+    _sync(ws)
+    return {**result, "report_path": out_path}

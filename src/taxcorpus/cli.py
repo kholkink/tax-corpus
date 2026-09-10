@@ -575,8 +575,15 @@ def _chat(args: argparse.Namespace, ws) -> int:
                 if turn.files_written:
                     print("файлы агента: " + ", ".join(sorted(set(turn.files_written))))
 
+        def sync() -> None:
+            if conn is not None:
+                from .workspace_store import sync_workspace, upsert_session
+                info = sync_workspace(conn, ws)
+                upsert_session(conn, info["workspace_id"], session)
+
         if args.message:
             show(session.send(args.message))
+            sync()
             return 0 if session.status != "waiting_user" else 3
         while True:
             try:
@@ -597,12 +604,34 @@ def _chat(args: argparse.Namespace, ws) -> int:
                     print(f"  #{t['id']} [{t['status']}] {t['title']}")
                 continue
             show(session.send(line))
+            sync()
         session.save()
+        sync()
         print(f"сессия сохранена: {session.path}")
         return 0
     finally:
         if conn is not None:
             conn.close()
+
+
+def cmd_audit(args: argparse.Namespace) -> int:
+    """Аудит документа (F1): статус каждой ссылки, правки после даты документа, снятые письма."""
+    from .audit import audit_text, render_markdown
+    from .textract import extract_text
+
+    text = extract_text(args.file)
+    corpus, conn = _open_corpus(args)
+    try:
+        report = audit_text(corpus, text, args.as_of, args.doc_date)
+    finally:
+        if conn is not None:
+            conn.close()
+    md = render_markdown(report)
+    if args.out:
+        Path(args.out).write_text(md, encoding="utf-8")
+        print(f"отчёт: {args.out}")
+    print(md)
+    return 0 if report.ok else 2
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -771,6 +800,16 @@ def build_parser() -> argparse.ArgumentParser:
     w_chat.add_argument("--data-dir", default="data/processed")
     w_chat.add_argument("--db-url", default=None)
     p_ws.set_defaults(func=cmd_workspace)
+
+    p_audit = sub.add_parser("audit", help="аудит документа: ссылки на нормы и письма (F1)")
+    p_audit.add_argument("--file", required=True, help="docx/pdf/md/txt")
+    p_audit.add_argument("--as-of", default=date.today().isoformat())
+    p_audit.add_argument("--doc-date", default=None, help="дата документа: показать правки после неё")
+    p_audit.add_argument("--out", default=None, help="куда записать отчёт (md)")
+    p_audit.add_argument("--local", action="store_true")
+    p_audit.add_argument("--data-dir", default="data/processed")
+    p_audit.add_argument("--db-url", default=None)
+    p_audit.set_defaults(func=cmd_audit)
 
     return parser
 
