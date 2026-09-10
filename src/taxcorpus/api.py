@@ -166,6 +166,22 @@ def unit_positions(unit_id: str, as_of: str | None = None) -> dict:
     return corpus().get_position_map(unit_id, _as_of(as_of))
 
 
+@app.get("/units/{unit_id}/history")
+def unit_history(unit_id: str) -> dict:
+    """Все интервалы текста единицы (F3) + архив перезагрузок."""
+    conn = _conn_required()
+    from .db import unit_versions
+    archive = conn.execute("SELECT text_hash, valid_from, valid_to, archived_at FROM unit_text_archive WHERE unit_id = %s "
+                           "ORDER BY archived_at", (unit_id,)).fetchall()
+    return {"unit_id": unit_id, "versions": unit_versions(conn, unit_id), "archive": [dict(a) for a in archive]}
+
+
+@app.get("/units/{unit_id}/diff")
+def unit_diff(unit_id: str, a: str, b: str) -> dict:
+    from .db import diff_versions
+    return diff_versions(_conn_required(), unit_id, a, b)
+
+
 @app.get("/resolve")
 def resolve(citation: str = Query(..., description="«п. 2 ст. 88 НК РФ»"),
             context_unit_id: str | None = None) -> dict:

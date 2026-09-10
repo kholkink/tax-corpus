@@ -397,6 +397,49 @@ def unit_versions(conn, unit_id: str) -> list[dict]:
         """, (unit_id,)).fetchall()
 
 
+def unit_text_at(conn, unit_id: str, on: str) -> dict | None:
+    return conn.execute(
+        "SELECT id, text, full_text, text_hash, valid_from, valid_to, edit_note FROM unit_text WHERE unit_id = %s "
+        "AND (valid_from IS NULL OR valid_from <= %s) AND (valid_to IS NULL OR valid_to > %s) "
+        "ORDER BY valid_from DESC NULLS LAST LIMIT 1", (unit_id, on, on)).fetchone()
+
+
+def add_unit_version(conn, unit_id: str, text: str, full_text: str | None, valid_from, edit_note: str | None = None,
+                     provenance: dict | None = None) -> int:
+    """Новая версия текста единицы с даты: текущий интервал закрывается, вставляется новый (F3)."""
+    import hashlib
+    h = "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+    with conn.transaction():
+        conn.execute("UPDATE unit_text SET valid_to = %s WHERE unit_id = %s AND (valid_to IS NULL OR valid_to > %s) "
+                     "AND (valid_from IS NULL OR valid_from < %s)", (valid_from, unit_id, valid_from, valid_from))
+        conn.execute("DELETE FROM unit_text WHERE unit_id = %s AND valid_from = %s", (unit_id, valid_from))
+        row = conn.execute(
+            "INSERT INTO unit_text (unit_id, valid_from, valid_to, text, full_text, text_hash, edit_note, provenance) "
+            "VALUES (%s, %s, NULL, %s, %s, %s, %s, %s) RETURNING id",
+            (unit_id, valid_from, text, full_text or text, h, edit_note, Json(provenance or {}))).fetchone()
+    return row["id"]
+
+
+def close_unit(conn, unit_id: str, valid_to) -> int:
+    """Единица утрачивает силу с даты: закрыть действующий интервал."""
+    with conn.transaction():
+        cur = conn.execute("UPDATE unit_text SET valid_to = %s WHERE unit_id = %s AND (valid_to IS NULL OR valid_to > %s)",
+                           (valid_to, unit_id, valid_to))
+    return cur.rowcount
+
+
+def diff_versions(conn, unit_id: str, date_a: str, date_b: str) -> dict:
+    """Текст единицы на две даты и unified diff (F3)."""
+    import difflib
+    a, b = unit_text_at(conn, unit_id, date_a), unit_text_at(conn, unit_id, date_b)
+    ta = (a["full_text"] or a["text"]) if a else ""
+    tb = (b["full_text"] or b["text"]) if b else ""
+    diff = "\n".join(difflib.unified_diff(ta.splitlines(), tb.splitlines(), f"на {date_a}", f"на {date_b}", lineterm="", n=1))
+    return {"unit_id": unit_id, "a": {"date": date_a, "in_force": a is not None, "valid_from": str(a["valid_from"]) if a else None},
+            "b": {"date": date_b, "in_force": b is not None, "valid_from": str(b["valid_from"]) if b else None},
+            "same": (a["text_hash"] if a else None) == (b["text_hash"] if b else None), "diff": diff}
+
+
 def parameters_for_unit(conn, unit_id: str, as_of_date: str | None = None) -> list[dict]:
     """Параметры (ставки, сроки), заякоренные в этой единице или её потомках."""
     return conn.execute(
