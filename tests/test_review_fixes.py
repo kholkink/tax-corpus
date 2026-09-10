@@ -187,3 +187,54 @@ def test_coordinate_rows_are_not_points():
     assert [r["number"] for r in recs if r["kind"] == "point"] == ["1"]
     sp = next(r for r in recs if r["kind"] == "subpoint")
     assert "61 53 00" in sp["text"]
+
+
+def test_effective_date_is_per_law():
+    note = ("<В ред. Федерального закона от 31 июля 2020 N 266-ФЗ (изменения вступают в силу "
+            "с 1 января 2021 г.), Федерального закона от 28 декабря 2022 N 564-ФЗ , "
+            "Федерального закона от 12 июля 2024 N 176-ФЗ (изменения вступают в силу с 1 января 2025 г.)>")
+    rows = amendments_from_note("u", note)
+    assert [(r["amending_act_number"], r["effective_date"]) for r in rows] == [
+        ("266-ФЗ", "2021-01-01"), ("564-ФЗ", None), ("176-ФЗ", "2025-01-01")]
+    repeal = amendments_from_note("u", "<Утратил силу с 1 января 2023 г.: Федеральный закон от 14 июля 2022 N 263-ФЗ>")
+    assert repeal[0]["effective_date"] == "2023-01-01"
+
+
+CONTEXT_TEXT = """Статья 10. Тест
+
+1. Первый абзац пункта один.
+
+Второй абзац пункта один.
+
+2. Пункт два:
+
+1) подпункт один;
+
+2) подпункт два.
+
+3. Пункт три.
+"""
+
+
+def test_reference_captures_relative_context():
+    recs = extract_references("nk1.art10.p1", "указанных в абзаце втором настоящего пункта, и в пункте 3 настоящей статьи")
+    assert recs[0]["target"] == {"type": "unit", "paragraph_ordinal": 2, "relative_to": "point"}
+    assert recs[1]["target"] == {"type": "unit", "point": "3", "relative_to": "article"}
+    plain = extract_references("nk1.art10.p1", "в соответствии с пунктом 2 статьи 5 настоящего Кодекса")
+    assert "relative_to" not in plain[0]["target"]
+
+
+def test_contextual_resolution_uses_source_ancestors():
+    index = UnitIndex(_records(CONTEXT_TEXT))
+    r = index.resolve_reference({"type": "unit", "paragraph_ordinal": 2, "relative_to": "point"},
+                                "nk1.art10.p1.ab1")
+    assert (r.unit_id, r.status) == ("nk1.art10.p1.ab2", "resolved")
+    # подпункт без пункта: по умолчанию — в пункте-источнике
+    r = index.resolve_reference({"type": "unit", "subpoint": "1"}, "nk1.art10.p2.sp2")
+    assert (r.unit_id, r.status) == ("nk1.art10.p2.sp1", "resolved")
+    # пункт без статьи — в статье-источнике
+    r = index.resolve_reference({"type": "unit", "point": "3", "relative_to": "article"}, "nk1.art10.p1")
+    assert r.unit_id == "nk1.art10.p3"
+    # абзац из текста, не принадлежащего пункту, — относительно статьи
+    r = index.resolve_reference({"type": "unit", "paragraph_ordinal": 9}, "nk1.art10")
+    assert r.status == "partial" and r.unit_id == "nk1.art10"

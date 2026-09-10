@@ -74,7 +74,7 @@ def test_paragraph_ordinal_word():
 
 def test_paragraph_ordinal_compound():
     rec = one("Правило закреплено в абзаце двадцать первом настоящей статьи.")
-    assert rec["target"] == {"type": "unit", "paragraph_ordinal": 21}
+    assert rec["target"] == {"type": "unit", "paragraph_ordinal": 21, "relative_to": "article"}
 
 
 def test_coordinate_list_and():
