@@ -183,6 +183,11 @@ python -m taxcorpus workspace confirm-fact --slug delo1 --id 2
 python -m taxcorpus workspace timeline --slug delo1
 python -m taxcorpus workspace deadlines --slug delo1             # сроки со ссылками на нормы -> задачи
 
+# объяснимость (F12): каждый результат поиска несёт sources (lexical/dense), matched_terms и why
+# («все слова запроса; близко по смыслу — совпали: …»); карточка нормы GET /units/{id}/card —
+# текст на дату, лента правок, письма и практика (с пометкой обязательных), версии текста,
+# заякоренные параметры; в UI — поле «Нормы» справа и клик по любой цитате в ответе агента.
+
 # карта точности (F11): эталон tests/golden/golden_v0.json (v1-draft, 75 вопросов, 14 тем; каждый
 # ожидаемый ID сверен с текстом корпуса по якорю; протокол сбора v1 с юристами — docs/golden-v1-protocol.md):
 python scripts/eval_search.py                          # unit@5/article@5 по темам -> reports/eval_search.json

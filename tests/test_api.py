@@ -108,3 +108,16 @@ def test_accuracy_endpoint(tmp_path, monkeypatch):
     assert c.get("/accuracy").json()["golden_questions"] == 3
     r = c.get("/accuracy?format=md")
     assert r.status_code == 200 and "Карта точности" in r.text
+
+
+def test_unit_card_offline():
+    client = TestClient(api.app)
+    r = client.get("/units/nk1.ch14.art88.p2/card", params={"as_of": "2026-09-10"})
+    assert r.status_code == 200
+    card = r.json()
+    assert card["in_force"] and "трех месяцев" in card["unit"]["full_text"]
+    assert set(card) >= {"amendments", "interpretations", "versions", "parameters", "explain"}
+    assert card["versions"] == [] and card["explain"]["interpretations"] == len(card["interpretations"])
+    assert client.get("/units/nk1.ch14.art88.p3/card", params={"as_of": "2026-09-10"}).status_code == 404
+    hit = client.get("/search", params={"q": "камеральная проверка", "as_of": "2026-09-10"}).json()["results"][0]
+    assert hit["matched_terms"] and hit["why"]

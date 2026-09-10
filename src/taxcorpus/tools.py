@@ -25,6 +25,38 @@ from .resolver import UnitIndex, resolve_citation
 from .terms import extract_terms
 
 
+def matched_terms(query: str, text: str) -> list[str]:
+    """Слова запроса, основы которых встречаются в тексте единицы (объяснимость поиска, F12)."""
+    words = [w for w in re.findall(r"[а-яёa-z0-9]+", query.lower()) if len(w) > 2]
+    text_stems = {_stem(w) for w in re.findall(r"[а-яёa-z0-9]+", text.lower())}
+    out, seen = [], set()
+    for w in words:
+        st = _stem(w)
+        if st in text_stems and st not in seen:
+            seen.add(st)
+            out.append(w)
+    return out
+
+
+def explain_hit(row: dict, query: str, text: str) -> dict:
+    """Добавляет к результату поиска matched_terms и why: чем найдено и какие слова совпали."""
+    terms = matched_terms(query, text)
+    sources = row.get("sources") or ([row["pass"]] if row.get("pass") in ("strict", "loose", "dense") else ["lexical"])
+    parts = []
+    if "lexical" in sources or row.get("pass") in ("strict", "loose"):
+        parts.append("все слова запроса" if row.get("pass") == "strict" else "часть слов запроса")
+    if "dense" in sources:
+        parts.append("близко по смыслу")
+    why = "; ".join(parts) or "лексическое совпадение"
+    if terms:
+        why += " — совпали: " + ", ".join(terms)
+    elif "dense" in sources:
+        why += " (лексических совпадений нет)"
+    row["matched_terms"] = terms
+    row["why"] = why
+    return row
+
+
 class HybridSearch:
     """Слияние лексического и семантического поиска (RRF), слой 4 плана.
 
@@ -43,10 +75,14 @@ class HybridSearch:
     def enabled(self) -> bool:
         return self.dense is not None and self.dense.ready
 
+    def _text(self, uid: str) -> str:
+        r = self.records.get(uid) or {}
+        return r.get("full_text") or r.get("text") or ""
+
     def search(self, query: str, as_of: str, limit: int, lexical) -> list[dict]:
         lex_rows = lexical(query, as_of, self.depth)
         if not self.enabled:
-            return lex_rows[:limit]
+            return [explain_hit(dict(r), query, self._text(r["unit_id"])) for r in lex_rows[:limit]]
         allowed = {uid for uid, r in self.records.items()
                    if r.get("is_chunk") and self.verifier.in_force(uid, as_of)}
         dense_hits = self.dense.search(query, limit=self.depth, allowed=allowed)
@@ -65,7 +101,7 @@ class HybridSearch:
                 row = dict(row)
             row["rank"] = round(score, 4)
             row["sources"] = [s for s, ok in (("lexical", uid in by_lex), ("dense", uid in dense_score)) if ok]
-            out.append(row)
+            out.append(explain_hit(row, query, self._text(uid)))
         return out
 
 

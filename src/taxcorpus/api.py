@@ -88,6 +88,30 @@ def get_unit(unit_id: str, as_of: str | None = None) -> dict:
     return {"as_of": _as_of(as_of), **row}
 
 
+@app.get("/units/{unit_id}/card")
+def unit_card(unit_id: str, as_of: str | None = None) -> dict:
+    """Карточка нормы (F12): текст на дату, лента правок, письма и практика, версии текста, параметры."""
+    c = corpus()
+    d = _as_of(as_of)
+    unit = c.get_unit(unit_id, d)
+    versions: list[dict] = []
+    parameters: list[dict] = []
+    conn = getattr(c, "conn", None)
+    if conn is not None:
+        from .db import parameters_for_unit, unit_versions
+        versions = unit_versions(conn, unit_id)
+        parameters = parameters_for_unit(conn, unit_id, d)
+    if unit is None and not versions:
+        raise HTTPException(404, f"единица {unit_id} не существует")
+    amendments = c.list_amendments(unit_id, None)
+    interpretations = c.get_interpretations(unit_id, d, 20)
+    return {"as_of": d, "unit_id": unit_id, "unit": unit, "in_force": unit is not None,
+            "amendments": amendments, "interpretations": interpretations, "versions": versions,
+            "parameters": parameters,
+            "explain": {"amendments": len(amendments), "interpretations": len(interpretations),
+                        "versions": len(versions), "mandatory_letters": sum(1 for i in interpretations if i.get("mandatory"))}}
+
+
 @app.get("/resolve")
 def resolve(citation: str = Query(..., description="«п. 2 ст. 88 НК РФ»"),
             context_unit_id: str | None = None) -> dict:
