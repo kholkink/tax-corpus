@@ -13,14 +13,16 @@ import re
 
 # --- базовые фрагменты шаблонов ---
 RE_DATE = r"\d{1,2}\.\d{1,2}\.\d{4}"  # числовая дата ДД.ММ.ГГГГ
-RE_NUM = r"\d+(?:\.\d+)?"  # номер с дробной частью: «2», «54.1»
+# номер с дробной частью и дефисным суффиксом: «2», «54.1», «284.3-1» (банк: «2843-1»)
+RE_NUM = r"\d+(?:\.\d+)?(?:-\d+)?"
 RE_WS = r"[^\S\r\n]+"  # горизонтальный пробел, не перевод строки
 RE_NO = r"№[^\S\r\n]*"  # знак номера с необязательным пробелом
 RE_AGNUM = r"[0-9а-яёa-z@/\-]+"  # номер ведомственного акта: «ММВ-7-6/398@»
 RE_NUM_FIND = re.compile(RE_NUM)
 
-# элемент списка — номер или диапазон: «3», «1 - 3», «2.1 - 2.4»
-RE_NUM_ITEM = rf"{RE_NUM}(?:[^\S\r\n]*[-–—][^\S\r\n]*{RE_NUM})?"
+# элемент списка — номер или диапазон: «3», «1 - 3», «2.1 - 2.4»; тире диапазона
+# обособлено пробелами, иначе это дефисный номер («2843-1» = 284.3-1)
+RE_NUM_ITEM = rf"{RE_NUM}(?:[^\S\r\n]+[-–—][^\S\r\n]+{RE_NUM})?"
 # координатный список: «1 и 3», «1, 2 и 4», «1 - 3 и 5»
 RE_NUM_LIST = (
     rf"(?:{RE_NUM_ITEM}(?:[^\S\r\n]*,[^\S\r\n]*{RE_NUM_ITEM})*"
@@ -102,7 +104,10 @@ RE_AGENCY = re.compile(
 # «настоящего Кодекса» и «Налогового кодекса» сюда не входят.
 RE_FOREIGN_ACT_AFTER = re.compile(
     r"[^\S\r\n]+("
-    r"федеральн\w+[^\S\r\n]+закон\w*"
+    # «пунктах 2 - 18 части первой статьи 30 Федерального закона»: в НК нет «частей»
+    # у статей — это структура другого акта
+    r"част\w+[^\S\r\n]+(?:перв|втор|трет|четв|пят|шест|\d)\w*"
+    r"|федеральн\w+[^\S\r\n]+закон\w*"
     r"|закон\w*[^\S\r\n]+(?:Российской[^\S\r\n]+Федерации|РФ|СССР|РСФСР)"
     r"|(?:Гражданск|Бюджетн|Уголовн|Трудов|Таможенн|Арбитражн|Земельн|Жилищн|Семейн"
     r"|Градостроительн|Лесн|Водн|Воздушн|Уголовно-процессуальн"
@@ -151,8 +156,11 @@ def _reference(unit_id: str, kind: str, raw_citation: str, target: dict) -> dict
 
 def _expand_range(start: str, end: str, limit: int = 30) -> list[str]:
     """«1 - 3» -> [1, 2, 3]; дробные или слишком длинные диапазоны — только концы."""
-    if start.isdigit() and end.isdigit() and 0 < int(end) - int(start) <= limit:
-        return [str(n) for n in range(int(start), int(end) + 1)]
+    if start.isdigit() and end.isdigit():
+        if 0 < int(end) - int(start) <= limit:
+            return [str(n) for n in range(int(start), int(end) + 1)]
+        if int(end) < int(start):
+            return [start]  # «2843 - 1» — не диапазон, а сбой разметки
     return [start, end]
 
 
@@ -163,7 +171,16 @@ def _numbers(fragment: str | None) -> list[str]:
     out: list[str] = []
     for item in RE_NUM_ITEM_FIND.findall(fragment):
         nums = RE_NUM_FIND.findall(item)
-        out.extend(_expand_range(nums[0], nums[1]) if len(nums) == 2 else nums)
+        if len(nums) == 2:
+            out.extend(_expand_range(nums[0], nums[1]))
+            continue
+        # диапазон без пробелов («статьями 254-269»): второе число больше первого;
+        # у дефисного номера («2843-1» = 284.3-1) суффикс меньше основы
+        m = re.fullmatch(r"(\d+)-(\d+)", nums[0])
+        if m and int(m.group(2)) > int(m.group(1)):
+            out.extend(_expand_range(m.group(1), m.group(2)))
+        else:
+            out.append(nums[0])
     return out
 
 
