@@ -31,6 +31,7 @@ src/taxcorpus/
   evaluation.py — метрики §6 плана по ответам агента; прогон — scripts/eval_agent.py
   interpretations.py — реестр писем/пленумов, привязка interprets, get_interpretations,
                   проверка цитат на документы
+  embeddings.py — DenseIndex (e5-small, npz-матрица), rrf(); tools.HybridSearch — слияние
   api.py        — FastAPI: /units, /search, /resolve, /parameters, /terms, /interpretations,
                   /deadline, /ask
   cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term / deadline / ask / load-docs / interpretations
@@ -92,6 +93,11 @@ python -m taxcorpus ingest --input data/processed/nk1_red199.txt --act-code nk1 
 # норма на дату (с историей правок из пометок редакции):
 python -m taxcorpus unit --id nk1.ch14.art88.p1 --as-of 2026-09-09
 
+# семантический индекс чанков (слой 4): intfloat/multilingual-e5-small на CPU, ~10 тыс. чанков
+# за час, файл data/index/<model>.npz (не в git); гибрид = лексика + dense через RRF.
+# На эталоне: лексика unit@5 17/23, dense 17/23, гибрид 21/23 (article@5 23/23):
+pip install -e ".[semantic]" && python -m taxcorpus embed
+python -m taxcorpus search --query "ставка налога на прибыль" --hybrid
 # полнотекстовый поиск по нормам (ts_rank_cd PostgreSQL: строгий проход по всем словам,
 # добор по «ИЛИ» лемм; на эталоне unit@5 = 17/23; русская морфология, фильтр по дате,
 # аббревиатуры расширяются полными формами: НДС → «налог на добавленную стоимость»):
