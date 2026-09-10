@@ -112,7 +112,7 @@ def deadline(req: DeadlineRequest) -> dict:
 class AskRequest(BaseModel):
     question: str
     as_of: date | None = None
-    model: str = "claude-opus-5"
+    model: str | None = None
     effort: str = "high"
 
 
@@ -122,6 +122,10 @@ def ask(req: AskRequest) -> dict[str, Any]:
         import anthropic
     except ImportError as exc:
         raise HTTPException(501, "агент недоступен: pip install -e '.[agent]'") from exc
+    from . import load_dotenv
     from .agent import TaxAgent
-    agent = TaxAgent(anthropic.Anthropic(), corpus(), model=req.model, effort=req.effort)
+    load_dotenv()
+    model = req.model or os.environ.get("TAXCORPUS_MODEL") or "claude-opus-5"
+    agent = TaxAgent(anthropic.Anthropic(), corpus(), model=model, effort=req.effort,
+                     fallbacks=not os.environ.get("ANTHROPIC_BASE_URL"))
     return agent.ask(req.question, req.as_of).to_dict()

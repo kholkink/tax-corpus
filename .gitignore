@@ -22,3 +22,4 @@ data/raw/sources/
 data/raw/fns/
 data/raw/minfin/
 .venv-linux/
+.env

@@ -369,7 +369,14 @@ def cmd_ask(args: argparse.Namespace) -> int:
     except ImportError:
         print("нужен пакет anthropic: pip install -e '.[agent]'", file=sys.stderr)
         return 1
-    client = anthropic.Anthropic()  # ключ из ANTHROPIC_API_KEY или профиля `ant auth login`
+    from . import load_dotenv
+    load_dotenv()  # ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL / TAXCORPUS_MODEL / TAXCORPUS_DB
+    client = anthropic.Anthropic()  # ключ и base_url — из окружения (.env) или профиля `ant auth login`
+    import os
+    model = args.model or os.environ.get("TAXCORPUS_MODEL") or "claude-opus-5"
+    # серверный фолбэк при отказе есть только у Anthropic; для совместимых провайдеров
+    # (DeepSeek: ANTHROPIC_BASE_URL=https://api.deepseek.com/anthropic) отключаем
+    fallbacks = not args.no_fallbacks and not os.environ.get("ANTHROPIC_BASE_URL")
 
     conn = None
     if args.local:
@@ -380,8 +387,7 @@ def cmd_ask(args: argparse.Namespace) -> int:
         conn = connect(args.db_url)
         corpus = DbCorpus(conn, args.data_dir)
     try:
-        agent = TaxAgent(client, corpus, model=args.model, effort=args.effort,
-                         fallbacks=not args.no_fallbacks,
+        agent = TaxAgent(client, corpus, model=model, effort=args.effort, fallbacks=fallbacks,
                          calendar=ProductionCalendar.load(args.calendar_dir))
         result = agent.ask(args.question, args.as_of)
     finally:
@@ -554,7 +560,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_ask = sub.add_parser("ask", help="вопрос агенту с проверкой цитат (нужен anthropic + ключ)")
     p_ask.add_argument("--question", required=True)
     p_ask.add_argument("--as-of", default=date.today().isoformat())
-    p_ask.add_argument("--model", default="claude-opus-5")
+    p_ask.add_argument("--model", default=None,
+                       help="по умолчанию TAXCORPUS_MODEL из .env, иначе claude-opus-5")
     p_ask.add_argument("--effort", default="high", choices=["low", "medium", "high", "xhigh", "max"])
     p_ask.add_argument("--local", action="store_true", help="офлайн-корпус из JSONL вместо БД")
     p_ask.add_argument("--data-dir", default="data/processed")
