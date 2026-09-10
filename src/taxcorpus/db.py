@@ -402,3 +402,53 @@ def find_terms(conn, query: str, as_of_date: str) -> list[dict]:
         """,
         (f"%{norm}%", as_of_date, as_of_date),
     ).fetchall()
+
+
+# --- слой 3: разъяснения (document / doc_reference) --------------------------------
+
+def load_documents_db(conn, docs: list, edges: list[dict]) -> int:
+    """Перезагрузка документов из реестра: документ + его рёбра interprets."""
+    with conn.transaction():
+        with conn.cursor() as cur:
+            for d in docs:
+                cur.execute("DELETE FROM document WHERE doc_id = %s", (d.doc_id,))
+                cur.execute(
+                    """
+                    INSERT INTO document (doc_id, kind, agency, number, doc_date, title, text,
+                                          source_url, mandatory, retrieved_at, sha256)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (d.doc_id, d.kind, d.agency, d.number, d.date, d.title, d.text,
+                     d.source_url, d.mandatory, d.retrieved_at, d.sha256),
+                )
+            cur.executemany(
+                """
+                INSERT INTO doc_reference (doc_id, to_unit_id, kind, raw_citation, status, confidence)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                [(e["doc_id"], e["to_unit_id"], e["kind"], e["raw_citation"], e["status"],
+                  e["confidence"]) for e in edges],
+            )
+    return len(docs)
+
+
+def get_interpretations(conn, unit_id: str, as_of_date: str, limit: int = 10) -> list[dict]:
+    """Документы, толкующие единицу (или её статью/потомков), изданные не позже даты."""
+    from .interpretations import PRIORITY
+    from .resolver import article_of_unit_id
+    article = article_of_unit_id(unit_id)
+    rows = conn.execute(
+        """
+        SELECT d.doc_id, d.kind, d.agency, d.number, d.doc_date AS date, d.title, d.mandatory,
+               d.source_url, left(d.text, 600) AS excerpt,
+               array_agg(DISTINCT r.raw_citation) AS cites
+        FROM document d JOIN doc_reference r ON r.doc_id = d.doc_id
+        WHERE (r.to_unit_id = %s OR r.to_unit_id LIKE %s OR %s LIKE r.to_unit_id || '.%%'
+               OR r.to_unit_id = %s)
+          AND d.doc_date <= %s
+        GROUP BY d.doc_id
+        """,
+        (unit_id, unit_id + ".%", unit_id, article, as_of_date),
+    ).fetchall()
+    rows.sort(key=lambda r: (PRIORITY.get(r["kind"], 9), not r["mandatory"], str(r["date"])))
+    return rows[:limit]

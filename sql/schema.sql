@@ -170,3 +170,30 @@ CREATE TABLE IF NOT EXISTS term (
 );
 ALTER TABLE term ADD COLUMN IF NOT EXISTS scope_unit_id TEXT REFERENCES unit(unit_id);
 CREATE INDEX IF NOT EXISTS idx_term_norm ON term(term_norm);
+
+-- слой 3: разъяснения и практика (письма Минфина/ФНС, пленумы, обзоры) и ребро interprets
+CREATE TABLE IF NOT EXISTS document (
+    doc_id       TEXT PRIMARY KEY,
+    kind         TEXT NOT NULL,                  -- letter | appeal_decision | plenum | review | ruling | constitutional
+    agency       TEXT,
+    number       TEXT NOT NULL,
+    doc_date     DATE NOT NULL,
+    title        TEXT,
+    text         TEXT NOT NULL,
+    source_url   TEXT,
+    mandatory    BOOLEAN NOT NULL DEFAULT false, -- «обязательно для применения налоговыми органами»
+    retrieved_at TIMESTAMPTZ,
+    sha256       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_document_number ON document(number, doc_date);
+
+CREATE TABLE IF NOT EXISTS doc_reference (
+    id           BIGSERIAL PRIMARY KEY,
+    doc_id       TEXT NOT NULL REFERENCES document(doc_id) ON DELETE CASCADE,
+    to_unit_id   TEXT NOT NULL REFERENCES unit(unit_id),
+    kind         TEXT NOT NULL DEFAULT 'interprets',
+    raw_citation TEXT NOT NULL,
+    status       TEXT NOT NULL,                  -- resolved | partial
+    confidence   REAL NOT NULL DEFAULT 1.0
+);
+CREATE INDEX IF NOT EXISTS idx_doc_reference_unit ON doc_reference(to_unit_id);

@@ -29,7 +29,9 @@ src/taxcorpus/
   agent.py      — тонкий агент над function calling (ручной цикл, без фреймворков):
                   системный промпт «цитируй или откажись», проверка цитат, переработка, журнал
   evaluation.py — метрики §6 плана по ответам агента; прогон — scripts/eval_agent.py
-  cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term / deadline / ask
+  interpretations.py — реестр писем/пленумов, привязка interprets, get_interpretations,
+                  проверка цитат на документы
+  cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term / deadline / ask / load-docs / interpretations
 sql/schema.sql  — Act / Edition / Unit / UnitText / Reference / Amendment / Parameter / Term /
                   raw_document / parse_run
 tests/          — pytest: идеализированный формат, формат банка ГАС, валидатор, нормализация
@@ -107,6 +109,12 @@ python -m taxcorpus deadline --start 2025-03-20 --amount 3 --unit months
 # (ANTHROPIC_API_KEY или `ant auth login`); модель по умолчанию claude-opus-5:
 python -m taxcorpus ask --question "Сколько длится камеральная проверка?" --as-of 2026-09-10 --log reports/ask.json
 python -m taxcorpus ask --question "…" --local   # офлайн-корпус из JSONL без БД (поиск грубый)
+
+# разъяснения и практика (слой 3, ребро interprets): реестр JSONL в data/interpretations,
+# ссылки на нормы извлекаются и резолвятся тем же кодом, что и внутри кодекса;
+# агент цитирует только письма из реестра (проверка цитат ловит чужие):
+python -m taxcorpus interpretations --id nk1.ch14.art88.p2 --as-of 2026-09-10
+python -m taxcorpus load-docs --input data/interpretations   # -> таблицы document / doc_reference
 
 # оценка агента на эталоне (метрики §6 плана: citation precision/recall, hallucination
 # rate, temporal correctness, abstention; каждый вопрос — платный запрос к модели):
