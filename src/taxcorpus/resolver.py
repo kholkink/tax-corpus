@@ -271,7 +271,8 @@ def resolve_citation(citation: str, index: UnitIndex,
                       "цитата не распознана" if not m else "цитата без статьи требует контекста")
 
 
-RE_ARTICLE_SEG = re.compile(r"^nk\d(?:\.r[\w-]+)?\.art[\w-]+")
+# головная часть ID: глава (ch14), раздел (rviii-1) или подраздел (sub2) — либо без неё
+RE_ARTICLE_SEG = re.compile(r"^nk\d(?:\.(?:ch|r|sub)[\w-]+)?\.art[\w-]+(?:@\d+)?")
 
 
 def article_of_unit_id(unit_id: str) -> str:

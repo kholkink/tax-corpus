@@ -46,3 +46,12 @@ def test_abstention_and_summary():
     assert d["abstention_quality"] == 1.0 and d["reworked_share"] == 0.5
     text = summary.render()
     assert "citation_precision_unit" in text and "q2" in text
+
+
+def test_article_of_unit_id_handles_chapter_section_and_bare_ids():
+    from taxcorpus.resolver import article_of_unit_id
+    assert article_of_unit_id("nk1.ch14.art88.p1.ab2") == "nk1.ch14.art88"
+    assert article_of_unit_id("nk2.rviii-1.art346-4.p2") == "nk2.rviii-1.art346-4"
+    assert article_of_unit_id("nk1.art10.p3") == "nk1.art10"
+    assert article_of_unit_id("nk2.ch23.art227-1@2.p1") == "nk2.ch23.art227-1@2"
+    assert article_of_unit_id("nk1.ch14") == "nk1.ch14"
