@@ -23,6 +23,8 @@ DEFAULT_DB_URL = "postgresql://postgres@localhost:5432/taxcorpus"
 
 
 def connect(db_url: str | None = None) -> psycopg.Connection:
+    from . import load_dotenv
+    load_dotenv()
     url = db_url or os.environ.get("TAXCORPUS_DB") or DEFAULT_DB_URL
     return psycopg.connect(url, row_factory=dict_row)
 

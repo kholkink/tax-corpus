@@ -30,12 +30,17 @@ def main() -> int:
     ap.add_argument("--local", action="store_true")
     ap.add_argument("--as-of", default=GOLDEN.get("as_of") or date.today().isoformat())
     ap.add_argument("--limit", type=int, default=None)
-    ap.add_argument("--model", default="claude-opus-5")
+    ap.add_argument("--model", default=None, help="по умолчанию TAXCORPUS_MODEL из .env")
     ap.add_argument("--effort", default="high")
     ap.add_argument("--db-url", default=None)
     args = ap.parse_args()
 
     import anthropic
+    from taxcorpus import load_dotenv
+    load_dotenv(str(ROOT / ".env"))
+    import os
+    args.model = args.model or os.environ.get("TAXCORPUS_MODEL") or "claude-opus-5"
+    fallbacks = not os.environ.get("ANTHROPIC_BASE_URL")
     client = anthropic.Anthropic()
     conn = None
     if args.local:
@@ -44,7 +49,7 @@ def main() -> int:
         from taxcorpus.db import connect
         conn = connect(args.db_url)
         corpus = DbCorpus(conn, ROOT / "data" / "processed")
-    agent = TaxAgent(client, corpus, model=args.model, effort=args.effort)
+    agent = TaxAgent(client, corpus, model=args.model, effort=args.effort, fallbacks=fallbacks)
 
     questions = [q for q in GOLDEN["questions"] if q["kind"] in ("search", "agent", "agent_abstain")]
     if args.limit:
