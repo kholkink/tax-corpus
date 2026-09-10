@@ -31,6 +31,13 @@ WORKSPACE_RULES = """
 - Задачи юристу (получить документ, уточнить у клиента) ставь через create_task.
 - В конце хода кратко скажи, что сделано, какие файлы созданы/обновлены и что ждёт юриста."""
 
+REDACTION_RULES = """
+Конфиденциальность: персональные данные в этом деле заменены плейсхолдерами вида [ФИО-1], [ИНН-1],
+[СЧЁТ-1], [ТЕЛ-1] — это и есть реальные реквизиты, скрытые от провайдера. Используйте плейсхолдеры
+как обычные значения (в тексте, аргументах инструментов, файлах), не комментируйте их, не пытайтесь
+восстановить или запросить исходные данные: юрист увидит настоящие значения автоматически.
+"""
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -65,6 +72,21 @@ class CaseSession:
         self.questions: list[dict] = []
         self.started_at = _now()
         self.files_written: list[str] = []
+        # F9: чувствительное дело у облачного провайдера — персональные данные маскируются
+        provider = getattr(agent, "provider", None)
+        location = getattr(provider, "location", "cloud")
+        self.redactor = None
+        if workspace.manifest.confidentiality == "sensitive" and location == "cloud":
+            from .redact import Redactor
+            self.redactor = Redactor(workspace.path / "redaction_map.json")
+
+    def _out(self, text: str) -> str:
+        """Текст к модели: маскировка ПДн, если включена."""
+        return self.redactor.redact(text) if self.redactor else text
+
+    def _in(self, text: str) -> str:
+        """Текст от модели: демаскировка."""
+        return self.redactor.unredact(text) if self.redactor else text
 
     # --- персистентность ----------------------------------------------------------------
     @property
@@ -100,9 +122,12 @@ class CaseSession:
     # --- промпт и инструменты -----------------------------------------------------------
     def system(self) -> str:
         m = self.ws.manifest
-        return SYSTEM_PROMPT.format(as_of=m.as_of) + WORKSPACE_RULES.format(
+        text = SYSTEM_PROMPT.format(as_of=m.as_of) + WORKSPACE_RULES.format(
             title=m.title, client=m.client or "не указан", as_of=m.as_of,
             jurisdiction=f"; регион: {m.jurisdiction}" if m.jurisdiction else "")
+        if self.redactor:
+            text += REDACTION_RULES
+        return text
 
     def tools(self) -> list[dict]:
         return [*TOOL_DEFINITIONS, *WORKSPACE_TOOLS]
@@ -155,7 +180,7 @@ class CaseSession:
     def send(self, text: str) -> Turn:
         if self.status == "waiting_user":
             return self.answer(text)
-        self.messages.append({"role": "user", "content": text})
+        self.messages.append({"role": "user", "content": self._out(text)})
         self.status = "active"
         return self._run()
 
@@ -167,7 +192,7 @@ class CaseSession:
                 q["answer"], q["answered_at"] = text, _now()
         results = [*self.pending["results"],
                    {"type": "tool_result", "tool_use_id": self.pending["tool_use_id"],
-                    "content": json.dumps({"answer": text}, ensure_ascii=False)}]
+                    "content": json.dumps({"answer": self._out(text)}, ensure_ascii=False)}]
         self.messages.append({"role": "user", "content": results})
         self.pending = None
         self.status = "active"
@@ -203,14 +228,17 @@ class CaseSession:
                     continue
                 args = block.input if isinstance(block.input, dict) else json.loads(block.input)
                 if block.name == "ask_user":
-                    question = {"tool_use_id": block.id, "question": args.get("question", ""),
-                                "options": args.get("options") or [], "asked_at": _now()}
+                    question = {"tool_use_id": block.id, "question": self._in(args.get("question", "")),
+                                "options": [self._in(o) for o in (args.get("options") or [])], "asked_at": _now()}
                     continue
+                if self.redactor:  # аргументы модели содержат плейсхолдеры — вернуть реальные значения
+                    args = json.loads(self._in(json.dumps(args, ensure_ascii=False)))
                 if block.name in WORKSPACE_TOOL_NAMES:
                     output, is_error = self._run_workspace_tool(block.name, args)
                 else:
                     output, is_error = execute_tool(self.agent.corpus, block.name, args, as_of,
                                                     self.agent.calendar)
+                output = self._out(output)
                 self.tool_log.append({"name": block.name, "input": args, "output": output[:4000],
                                       "is_error": is_error, "at": _now()})
                 item = {"type": "tool_result", "tool_use_id": block.id, "content": output}
@@ -233,6 +261,7 @@ class CaseSession:
         return turn
 
     def _finish(self, text: str, as_of: str) -> Turn:
+        text = self._in(text)
         report = self.agent._verify(text, as_of)
         if not report.ok:
             problems = "\n".join(f"- {c.status.upper()}: «{c.raw}»" + (f" — {c.note}" if c.note else "")
@@ -241,7 +270,7 @@ class CaseSession:
             response = self._call(tool_choice={"type": "none"})
             self.messages.append({"role": "assistant", "content": [_block_to_dict(b) for b in response.content]})
             if response.stop_reason != "refusal":
-                text = _text_of(response)
+                text = self._in(_text_of(response))
                 report = self.agent._verify(text, as_of)
         self.status = "active"
         return Turn("answer", text=text, verification=report, files_written=list(self.files_written))

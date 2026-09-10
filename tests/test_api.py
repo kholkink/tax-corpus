@@ -48,7 +48,7 @@ def test_workspace_endpoints(tmp_path, monkeypatch):
         _response([_block(type="text", text="Готово: research/итог.md (п. 2 ст. 88 НК РФ).")], "end_turn"),
     ]
     fake = FakeClient(responses)  # одна очередь ответов на все запросы сессии
-    monkeypatch.setattr(api, "make_agent", lambda: TaxAgent(fake, api.corpus(), fallbacks=False))
+    monkeypatch.setattr(api, "make_agent", lambda ws=None: TaxAgent(fake, api.corpus(), fallbacks=False))
     client = TestClient(api.app)
 
     r = client.post("/workspaces", json={"slug": "case-1", "title": "Дело 1", "client": "ООО", "as_of": "2026-09-10"})

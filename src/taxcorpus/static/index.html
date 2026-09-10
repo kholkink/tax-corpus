@@ -67,6 +67,7 @@
       <input name="title" placeholder="Название дела" required>
       <input name="client" placeholder="Клиент">
       <input name="as_of" type="date">
+      <select name="confidentiality"><option value="standard">обычное дело</option><option value="sensitive">чувствительное: локальная модель / маскировка ПДн</option></select>
       <button>Создать</button>
     </form>
   </aside>
@@ -134,7 +135,7 @@ async function openWorkspace(slug) {
   state.slug = slug; state.session = null; state.pending = null;
   const w = await api(`/workspaces/${slug}`);
   state.asOf = w.manifest.as_of;
-  $('ws-meta').textContent = `${w.manifest.title} · as_of ${w.manifest.as_of}` + (w.manifest.corpus_snapshot ? ` · снимок #${w.manifest.corpus_snapshot}` : '');
+  $('ws-meta').textContent = `${w.manifest.title} · as_of ${w.manifest.as_of}` + (w.manifest.corpus_snapshot ? ` · снимок #${w.manifest.corpus_snapshot}` : '') + (w.manifest.confidentiality === 'sensitive' ? ' · ЧУВСТВИТЕЛЬНОЕ' : '') + (w.provider ? ` · ${w.provider}` : '');
   renderFiles(w.files); renderTasks(w.tasks); renderSessions(w.sessions);
   $('messages').innerHTML = '<div class="status">Новая сессия: опишите задачу или выберите сессию справа.</div>';
   $('session-status').textContent = '';
@@ -219,7 +220,7 @@ $('composer').addEventListener('keydown', e => { if (e.key === 'Enter' && e.ctrl
 $('new-session').onclick = () => { state.session = null; state.pending = null; $('messages').innerHTML = ''; $('session-status').textContent = 'новая сессия'; };
 $('ws-new').onsubmit = async e => {
   e.preventDefault(); const f = new FormData(e.target);
-  const payload = {slug:f.get('slug'), title:f.get('title'), client:f.get('client')||''}; if (f.get('as_of')) payload.as_of = f.get('as_of');
+  const payload = {slug:f.get('slug'), title:f.get('title'), client:f.get('client')||'', confidentiality:f.get('confidentiality')||'standard'}; if (f.get('as_of')) payload.as_of = f.get('as_of');
   try { await api('/workspaces', {method:'POST', body: JSON.stringify(payload)}); e.target.reset(); await loadWorkspaces(); openWorkspace(payload.slug); } catch (err) { alert(err.message); }
 };
 $('upload-btn').onclick = () => { if (!state.slug) return alert('выберите дело'); $('upload').click(); };
@@ -256,7 +257,7 @@ $('audit-run').onclick = async () => {
     document.querySelectorAll('#audit-table mark, #audit-html mark').forEach(m => m.onclick = () => {});
   } catch (e) { $('audit-summary').textContent = 'Ошибка: ' + e.message; }
 };
-api('/health').then(h => $('backend').textContent = 'бэкенд: ' + h.backend).catch(()=>{});
+api('/health').then(h => $('backend').textContent = 'бэкенд: ' + h.backend + (h.provider && h.provider.badge ? ' · ' + h.provider.badge : '')).catch(()=>{});
 loadWorkspaces();
 </script>
 </body>

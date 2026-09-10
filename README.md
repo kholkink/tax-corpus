@@ -126,9 +126,17 @@ python -m taxcorpus term --term "индивидуальн"
 # (дни — рабочие, --calendar-days для календарных; переносы выходных — data/calendar/<год>.json):
 python -m taxcorpus deadline --start 2025-03-20 --amount 3 --unit months
 
-# провайдер модели — из .env (в .gitignore): ANTHROPIC_API_KEY, при необходимости
-# ANTHROPIC_BASE_URL (DeepSeek: https://api.deepseek.com/anthropic) и TAXCORPUS_MODEL (deepseek-chat);
+# провайдер модели (P4): профили в config/providers.json (в .gitignore; образец —
+# config/providers.example.json; ключи только через имена переменных окружения) или один
+# профиль из .env: ANTHROPIC_API_KEY, при необходимости ANTHROPIC_BASE_URL
+# (DeepSeek: https://api.deepseek.com/anthropic) и TAXCORPUS_MODEL (deepseek-chat);
 # без base_url по умолчанию claude-opus-5 с серверным фолбэком при отказе.
+# Выбор: --provider ИМЯ > профиль дела (workspace new --provider) > TAXCORPUS_PROVIDER > default.
+# Конфиденциальность дела (F9): `workspace new --confidentiality sensitive` — такое дело идёт
+# только в профиль location=local; без него запуск отклоняется, а с TAXCORPUS_ALLOW_CLOUD_SENSITIVE=1
+# уходит в облако с маскировкой ПДн (ИНН, КПП, ОГРН, СНИЛС, паспорт, счета, телефоны, e-mail, ФИО ->
+# [ИНН-1] и т.п.; словарь — workspaces/<slug>/redaction_map.json, ответ демаскируется).
+# Бейдж «куда уходят данные» — в /health, в карточке дела и в UI.
 # агент (слой 6): планирование -> инструменты корпуса -> синтез в фиксированном формате ->
 # детерминированная проверка каждой цитаты на существование и действие на дату ->
 # при проблемах один круг переработки. Нужны `pip install -e ".[agent]"` и ключ
