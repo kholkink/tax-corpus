@@ -68,20 +68,38 @@ def _numeric_date(text: str) -> date | None:
         return None
 
 
+RE_LAW_FRAGMENT = re.compile(r"от[^,>]{0,70}?(?:№|N)\s*\d+(?:-\d+)*-ФЗ", re.IGNORECASE)
+
+
 def law_pairs(note: str) -> list[tuple[str, str]]:
     """Пометка -> [(номер закона, дата ISO), ...] в порядке упоминания.
 
     Разделитель законов — запятая/конец пометки, поэтому «от … г. N 137-ФЗ»
     (точка после «г») не рвёт пару.
     """
-    pairs: list[tuple[str, str]] = []
-    for match in re.finditer(r"от[^,>]{0,70}?(?:№|N)\s*\d+(?:-\d+)*-ФЗ", note, re.IGNORECASE):
-        fragment = match.group(0)
-        number = _norm_number(fragment)
-        d = parse_word_date(fragment) or _numeric_date(fragment)
-        if number:
-            pairs.append((number, d.isoformat() if d else ""))
-    return pairs
+    return [(number, law_date) for number, law_date, _ in law_entries(note)]
+
+
+def law_entries(note: str) -> list[tuple[str, str, str | None]]:
+    """Пометка -> [(номер закона, дата закона ISO, дата вступления ISO | None), ...].
+
+    Дата вступления берётся из хвоста ПОСЛЕ конкретного закона и до следующего:
+    «…N 176-ФЗ (изменения вступают в силу с 1 января 2025 г.), …N 564-ФЗ , …»;
+    для пометок «Утратил силу с 1 января 2023 г.: ФЗ …» — из головы пометки.
+    """
+    matches = list(RE_LAW_FRAGMENT.finditer(note))
+    head_effective = effective_date_of(note[:matches[0].start()]) if matches else None
+    entries: list[tuple[str, str, str | None]] = []
+    for idx, match in enumerate(matches):
+        number = _norm_number(match.group(0))
+        if not number:
+            continue
+        d = parse_word_date(match.group(0)) or _numeric_date(match.group(0))
+        tail_end = matches[idx + 1].start() if idx + 1 < len(matches) else len(note)
+        effective = effective_date_of(note[match.end():tail_end]) or head_effective
+        entries.append((number, d.isoformat() if d else "",
+                        effective.isoformat() if effective else None))
+    return entries
 
 
 # дата вступления правки в силу: «Утратил силу с 1 января 2023 г.», «со 2 августа 2021 г.»
@@ -136,15 +154,14 @@ def amendments_from_note(unit_id: str, note: str | None) -> list[dict]:
         operation = operation_of(single)
         if operation is None:
             continue
-        effective = effective_date_of(single)
-        for number, law_date in law_pairs(single):
+        for number, law_date, effective in law_entries(single):
             rows.append({
                 "target_unit_id": unit_id,
                 "scope": scope_of(single),
                 "operation": operation,
                 "amending_act_number": number,
                 "amending_act_date": law_date or None,
-                "effective_date": effective.isoformat() if effective else None,
+                "effective_date": effective,
                 "raw_note": single,
             })
     return rows

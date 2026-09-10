@@ -62,16 +62,20 @@ class UnitIndex:
     def exists(self, unit_id: str) -> bool:
         return unit_id in self.units
 
-    def article_of(self, unit_id: str) -> str | None:
+    def ancestor_of(self, unit_id: str, kind: str) -> str | None:
+        """Ближайший предок вида kind (включая саму единицу)."""
         cur = unit_id
         while cur:
             rec = self.units.get(cur)
             if rec is None:
                 return None
-            if rec["kind"] == "article":
+            if rec["kind"] == kind:
                 return cur
             cur = self.parent_of.get(cur)
         return None
+
+    def article_of(self, unit_id: str) -> str | None:
+        return self.ancestor_of(unit_id, "article")
 
     def _by_number(self, kind: str, number: str,
                    parent: str | None = None) -> tuple[str, str] | None:
@@ -122,27 +126,37 @@ class UnitIndex:
                                   "(возможно, другая часть кодекса)")
             unit_id, depth = hit[0], "article"
         else:
-            unit_id = self.article_of(from_unit_id)
+            # контекстная ссылка: база — предок источника. Явная («настоящего пункта»)
+            # или по умолчанию: пункт ищется в статье, подпункт/абзац — в пункте-источнике
+            base_kind = target.get("relative_to")
+            if base_kind not in ("point", "subpoint", "article", "chapter", "section"):
+                base_kind = "article" if target.get("point") else "point"
+            unit_id = self.ancestor_of(from_unit_id, base_kind)
+            if unit_id is None and base_kind in ("point", "subpoint"):
+                # источник — текст самой статьи: «абзац второй» относится к статье
+                unit_id, base_kind = self.article_of(from_unit_id), "article"
             if unit_id is None:
-                return Resolution(None, "unresolved", None, "у источника нет статьи-родителя")
-            depth = "article"
+                return Resolution(None, "unresolved", None,
+                                  f"у источника нет предка вида {base_kind}")
+            depth = base_kind
 
         # --- пункт -> подпункт -> абзац ---
         if target.get("point"):
             hit = self._by_number("point", str(target["point"]), parent=unit_id)
             if hit is None:
-                return Resolution(unit_id, "partial", "article",
+                return Resolution(unit_id, "partial", depth,
                                   f"пункт {target['point']} в {unit_id} не найден")
             unit_id, depth = hit[0], "point"
-            if target.get("subpoint"):
-                hit = self._by_number("subpoint", str(target["subpoint"]), parent=unit_id)
-                if hit is None:
-                    return Resolution(unit_id, "partial", "point",
-                                      f"подпункт {target['subpoint']} в {unit_id} не найден")
-                unit_id, depth = hit[0], "subpoint"
-        elif target.get("subpoint"):
-            return Resolution(unit_id, "partial", "article",
-                              "подпункт без пункта не резолвится однозначно")
+        if target.get("subpoint"):
+            if depth not in ("point", "subpoint"):
+                return Resolution(unit_id, "partial", depth,
+                                  "подпункт без пункта не резолвится однозначно")
+            parent = unit_id if depth == "point" else self.parent_of.get(unit_id)
+            hit = self._by_number("subpoint", str(target["subpoint"]), parent=parent)
+            if hit is None:
+                return Resolution(unit_id, "partial", depth,
+                                  f"подпункт {target['subpoint']} в {parent} не найден")
+            unit_id, depth = hit[0], "subpoint"
 
         if target.get("paragraph_ordinal"):
             candidate = f"{unit_id}.ab{target['paragraph_ordinal']}"

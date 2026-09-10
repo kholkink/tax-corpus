@@ -52,9 +52,14 @@ RE_INTERNAL = re.compile(
     rf"(?:[^\S\r\n]*(?P<pnt>{_W_PNT}){RE_WS}(?P<pnt_num>{RE_NUM_LIST}))?"
     rf"(?:[^\S\r\n]*(?P<art>{_W_ART}){RE_WS}(?P<art_num>{RE_NUM_LIST}))?"
     rf"(?:[^\S\r\n]*(?P<chap>{_W_CHP}){RE_WS}(?P<chap_num>{RE_NUM}))?"
-    rf"(?:[^\S\r\n]*(?P<sec>{_W_SEC}){RE_WS}(?P<sec_num>{RE_ROMAN}))?",
+    rf"(?:[^\S\r\n]*(?P<sec>{_W_SEC}){RE_WS}(?P<sec_num>{RE_ROMAN}))?"
+    # контекст: «абзаце первом настоящего пункта», «пункте 2 настоящей статьи»
+    r"(?:[^\S\r\n]+настоящ\w+[^\S\r\n]+(?P<rel>пункта|подпункта|статьи|главы|раздела|Кодекса))?",
     re.IGNORECASE,
 )
+
+_REL_KIND = {"пункта": "point", "подпункта": "subpoint", "статьи": "article",
+             "главы": "chapter", "раздела": "section", "кодекса": "act"}
 
 # внешние акты: головная конструкция + одна или несколько пар «от ДАТА № НОМЕР»;
 # перечисление через «и»/«,» продолжает ту же конструкцию
@@ -175,11 +180,14 @@ def _internal_records(unit_id: str, match: re.Match) -> list[dict]:
     combos: list[dict] = [{}]
     for key in present:
         combos = [{**combo, key: value} for combo in combos for value in numbers[key]]
+    rel = _REL_KIND.get((match.group("rel") or "").lower())
     records = []
     for combo in combos:
         target = {"type": "unit", **combo}
         if ordinal is not None:
             target["paragraph_ordinal"] = ordinal
+        if rel and rel != "act":
+            target["relative_to"] = rel  # база контекстной ссылки — предок источника этого вида
         records.append(_reference(unit_id, "internal_citation", match.group(0), target))
     return records
 

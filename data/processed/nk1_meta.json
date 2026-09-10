@@ -10,7 +10,7 @@
   "source_path": "data/processed/nk1_red199.txt",
   "source_format": "txt",
   "source_sha256": "sha256:9a33a8e5a76dc1b8349a5a1f523ea3528ae858c73020b9787bdcb088509316ed",
-  "retrieved_at": "2026-09-10T09:55:04.139748+00:00",
+  "retrieved_at": "2026-09-10T09:58:19.884987+00:00",
   "valid_from": "2026-08-04",
   "stats": {
     "paragraphs_total": 6614,
