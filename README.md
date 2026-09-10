@@ -143,8 +143,9 @@ python scripts/fetch_court_acts.py                       # пленумы ВАС
 # итог реестра: 1690 писем ФНС + 222 письма Минфина + 2 пленума = 1914 документов, 8711 рёбер interprets
 python -m taxcorpus snapshot --description "…"           # снимок корпуса: счётчики, хеши, коммит (§7)
 
-# HTTP API (слой 7): те же инструменты + /ask; бэкенд по TAXCORPUS_DB, иначе офлайн-корпус
-pip install -e ".[api]" && uvicorn taxcorpus.api:app --reload   # /docs — OpenAPI
+# HTTP API (слой 7) и веб-клиент рабочего пространства: дела, файлы с просмотром, чат сессии
+# с карточкой вопроса агента, кликабельные источники (норма в нужной редакции), задачи
+pip install -e ".[api]" && uvicorn taxcorpus.api:app --reload   # http://127.0.0.1:8000/ — UI, /docs — OpenAPI
 
 # рабочее пространство дела (docs/workspace-plan.md): папка с файлами юриста (inbox/, notes/)
 # и агента (research/, drafts/ с версиями и шапкой провенанса), сессии с паузой на вопрос

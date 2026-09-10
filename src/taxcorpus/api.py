@@ -16,6 +16,7 @@ from functools import lru_cache
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from .deadlines import ProductionCalendar, compute_deadline
@@ -28,6 +29,8 @@ app = FastAPI(title="tax-corpus", version="0.1.0",
 
 @lru_cache(maxsize=1)
 def corpus():
+    from . import load_dotenv
+    load_dotenv()  # TAXCORPUS_DB / ANTHROPIC_* из .env
     db_url = os.environ.get("TAXCORPUS_DB")
     data_dir = os.environ.get("TAXCORPUS_DATA", "data/processed")
     if db_url:
@@ -38,6 +41,13 @@ def corpus():
 
 def _as_of(value: str | None) -> str:
     return value or date.today().isoformat()
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+def ui() -> str:
+    """Веб-клиент (фаза B): одна статическая страница без сборки."""
+    from pathlib import Path
+    return (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
 
 
 @app.get("/health")

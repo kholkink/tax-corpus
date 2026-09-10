@@ -80,3 +80,9 @@ def test_workspace_endpoints(tmp_path, monkeypatch):
     hist = client.get(f"/workspaces/case-1/sessions/{sid}").json()
     assert [m["role"] for m in hist["messages"]] == ["user", "agent"] and hist["questions"][0]["answer"] == "УСН"
     assert client.get("/workspaces/nope").status_code == 404
+
+
+def test_ui_page_served():
+    client = TestClient(api.app)
+    r = client.get("/")
+    assert r.status_code == 200 and "рабочее пространство" in r.text and "/workspaces" in r.text

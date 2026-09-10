@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tax-corpus · рабочее пространство</title>
+<style>
+  :root { --bg:#f6f7f9; --panel:#fff; --line:#dde1e7; --text:#1d2330; --muted:#6b7280; --accent:#1f5fbf; --ok:#0a7a3d; --warn:#b45309; --bad:#b91c1c; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--text); background:var(--bg); }
+  header { display:flex; align-items:center; gap:16px; padding:10px 16px; background:var(--panel); border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; margin:0; }
+  header .meta { color:var(--muted); font-size:12px; }
+  main { display:grid; grid-template-columns: 260px 1fr 340px; gap:0; height:calc(100vh - 45px); }
+  aside, section { overflow:auto; }
+  aside { background:var(--panel); border-right:1px solid var(--line); padding:12px; }
+  aside.right { border-right:0; border-left:1px solid var(--line); }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); margin:14px 0 6px; }
+  .ws { padding:6px 8px; border-radius:6px; cursor:pointer; }
+  .ws:hover, .ws.active { background:#e8effb; }
+  .ws small { display:block; color:var(--muted); }
+  form.new { display:grid; gap:6px; margin-top:8px; }
+  input, textarea, button, select { font:inherit; }
+  input, textarea { width:100%; padding:6px 8px; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  button { padding:6px 10px; border:1px solid var(--accent); background:var(--accent); color:#fff; border-radius:6px; cursor:pointer; }
+  button.secondary { background:#fff; color:var(--accent); }
+  button:disabled { opacity:.5; cursor:default; }
+  section.chat { display:flex; flex-direction:column; padding:0 16px; }
+  .messages { flex:1; overflow:auto; padding:12px 0; }
+  .msg { max-width:900px; margin:0 0 12px; padding:10px 12px; border-radius:10px; white-space:pre-wrap; }
+  .msg.user { background:#e8effb; margin-left:auto; }
+  .msg.agent { background:var(--panel); border:1px solid var(--line); }
+  .msg.agent .cite { color:var(--accent); cursor:pointer; text-decoration:underline dotted; }
+  .question { background:#fff7e6; border:1px solid #f3d9a4; border-radius:10px; padding:10px 12px; margin:0 0 12px; }
+  .question .opts { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .verify { font-size:12px; color:var(--muted); margin-top:6px; }
+  .verify .ok { color:var(--ok); } .verify .bad { color:var(--bad); } .verify .warn { color:var(--warn); }
+  .composer { display:flex; gap:8px; padding:10px 0 14px; border-top:1px solid var(--line); }
+  .composer textarea { min-height:60px; }
+  .file { padding:4px 6px; border-radius:6px; cursor:pointer; display:flex; justify-content:space-between; gap:6px; }
+  .file:hover { background:#eef2f7; }
+  .file .own { color:var(--muted); font-size:11px; }
+  .task { padding:6px 8px; border:1px solid var(--line); border-radius:6px; margin-bottom:6px; }
+  .task.done { opacity:.5; text-decoration:line-through; }
+  pre.viewer { white-space:pre-wrap; background:#fff; border:1px solid var(--line); border-radius:8px; padding:10px; max-height:40vh; overflow:auto; font:12px/1.4 ui-monospace, Menlo, monospace; }
+  .status { font-size:12px; color:var(--muted); }
+  .spinner { display:inline-block; width:12px; height:12px; border:2px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin 1s linear infinite; vertical-align:middle; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  dialog { border:1px solid var(--line); border-radius:10px; max-width:720px; width:90vw; }
+  dialog pre { white-space:pre-wrap; font:13px/1.45 system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<header>
+  <h1>tax-corpus · рабочее пространство юриста</h1>
+  <span class="meta" id="backend"></span>
+  <span class="meta" id="ws-meta"></span>
+</header>
+<main>
+  <aside>
+    <h2>Дела</h2>
+    <div id="ws-list"></div>
+    <h2>Новое дело</h2>
+    <form class="new" id="ws-new">
+      <input name="slug" placeholder="slug (латиница)" required pattern="[a-z0-9][a-z0-9_-]{1,60}">
+      <input name="title" placeholder="Название дела" required>
+      <input name="client" placeholder="Клиент">
+      <input name="as_of" type="date">
+      <button>Создать</button>
+    </form>
+  </aside>
+
+  <section class="chat">
+    <div class="status" id="session-status" style="padding:8px 0"></div>
+    <div class="messages" id="messages"><div class="status">Выберите дело слева, затем задайте вопрос или опишите задачу.</div></div>
+    <div class="composer">
+      <textarea id="composer" placeholder="Сообщение агенту… (Ctrl+Enter — отправить)"></textarea>
+      <div style="display:grid; gap:6px">
+        <button id="send">Отправить</button>
+        <button class="secondary" id="new-session">Новая сессия</button>
+      </div>
+    </div>
+  </section>
+
+  <aside class="right">
+    <h2>Файлы дела <button class="secondary" id="upload-btn" style="float:right;padding:2px 8px">+ загрузить</button></h2>
+    <input type="file" id="upload" multiple hidden>
+    <div id="files"></div>
+    <h2>Просмотр</h2>
+    <pre class="viewer" id="viewer">—</pre>
+    <h2>Задачи</h2>
+    <div id="tasks"></div>
+    <h2>Сессии</h2>
+    <div id="sessions"></div>
+  </aside>
+</main>
+<dialog id="unit-dialog"><h3 id="unit-title"></h3><div class="status" id="unit-meta"></div><pre id="unit-text"></pre><form method="dialog"><button>Закрыть</button></form></dialog>
+
+<script>
+const api = (path, opts={}) => fetch(path, {headers:{'Content-Type':'application/json'}, ...opts}).then(async r => {
+  if (!r.ok) throw new Error((await r.json().catch(()=>({detail:r.statusText}))).detail || r.statusText);
+  return r.json();
+});
+const $ = id => document.getElementById(id);
+const state = { slug:null, session:null, pending:null, asOf:null };
+
+async function loadWorkspaces() {
+  const list = await api('/workspaces');
+  $('ws-list').innerHTML = list.map(w => `<div class="ws ${w.slug===state.slug?'active':''}" data-slug="${w.slug}">${esc(w.title)}<small>${esc(w.client||'—')} · as_of ${w.as_of}</small></div>`).join('') || '<div class="status">пока нет дел</div>';
+  document.querySelectorAll('.ws').forEach(el => el.onclick = () => openWorkspace(el.dataset.slug));
+}
+async function openWorkspace(slug) {
+  state.slug = slug; state.session = null; state.pending = null;
+  const w = await api(`/workspaces/${slug}`);
+  state.asOf = w.manifest.as_of;
+  $('ws-meta').textContent = `${w.manifest.title} · as_of ${w.manifest.as_of}` + (w.manifest.corpus_snapshot ? ` · снимок #${w.manifest.corpus_snapshot}` : '');
+  renderFiles(w.files); renderTasks(w.tasks); renderSessions(w.sessions);
+  $('messages').innerHTML = '<div class="status">Новая сессия: опишите задачу или выберите сессию справа.</div>';
+  $('session-status').textContent = '';
+  loadWorkspaces();
+}
+function renderFiles(files) {
+  $('files').innerHTML = files.map(f => `<div class="file" data-path="${esc(f.path)}"><span>${esc(f.path)}</span><span class="own">${f.owner==='agent'?'агент':'юрист'}</span></div>`).join('') || '<div class="status">пусто — загрузите документы</div>';
+  document.querySelectorAll('.file').forEach(el => el.onclick = async () => {
+    const r = await api(`/workspaces/${state.slug}/files/${encodeURIComponent(el.dataset.path).replace(/%2F/g,'/')}`);
+    $('viewer').textContent = r.text + (r.truncated ? '\n\n… (показаны первые символы, всего ' + r.chars + ')' : '');
+  });
+}
+function renderTasks(tasks) {
+  $('tasks').innerHTML = tasks.map(t => `<div class="task ${t.status}">#${t.id} ${esc(t.title)}${t.due?` <span class="status">до ${t.due}</span>`:''}<div class="status">${esc(t.details||'')}</div></div>`).join('') || '<div class="status">нет задач</div>';
+}
+function renderSessions(sessions) {
+  $('sessions').innerHTML = sessions.map(s => `<div class="file" data-sid="${s.session_id}"><span>${s.session_id}</span><span class="own">${s.status}</span></div>`).join('') || '<div class="status">нет сессий</div>';
+  document.querySelectorAll('[data-sid]').forEach(el => el.onclick = () => openSession(el.dataset.sid));
+}
+async function openSession(sid) {
+  const s = await api(`/workspaces/${state.slug}/sessions/${sid}`);
+  state.session = sid; state.pending = s.pending;
+  $('messages').innerHTML = '';
+  s.messages.forEach(m => addMessage(m.role, m.text));
+  if (s.status === 'waiting_user' && s.pending) addQuestion(s.pending);
+  $('session-status').textContent = `сессия ${sid} · ${s.status} · вызовов инструментов: ${s.tool_log.length}`;
+}
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+const CITE = /((?:абз\.?\s*\S+\s*)?(?:подп\.?\s*[\d.\-]+\s*)?(?:п\.?\s*[\d.\-]+\s*)?ст\.?\s*[\d.\-]+(?:\s*НК\s*РФ)?)/g;
+function linkify(text) {
+  return esc(text).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>').replace(CITE, m => `<span class="cite" data-cite="${esc(m)}">${m}</span>`);
+}
+function addMessage(role, text, verification) {
+  const div = document.createElement('div'); div.className = 'msg ' + role;
+  div.innerHTML = role === 'agent' ? linkify(text) : esc(text);
+  if (verification) {
+    const v = document.createElement('div'); v.className = 'verify';
+    v.innerHTML = `проверка цитат: ${verification.checks.length} ссылок, проблем ${verification.checks.filter(c=>c.status!=='ok').length} ` +
+      verification.checks.map(c => `<span class="${c.status==='ok'?'ok':(c.status==='partial'?'warn':'bad')}">${c.status==='ok'?'OK':c.status.toUpperCase()}</span>`).join(' ');
+    div.appendChild(v);
+  }
+  $('messages').appendChild(div);
+  div.querySelectorAll('.cite').forEach(el => el.onclick = () => showUnit(el.dataset.cite));
+  $('messages').scrollTop = $('messages').scrollHeight;
+}
+function addQuestion(q) {
+  const div = document.createElement('div'); div.className = 'question';
+  div.innerHTML = `<b>Вопрос агента:</b> ${esc(q.question)}<div class="opts">${(q.options||[]).map(o => `<button class="secondary" data-opt="${esc(o)}">${esc(o)}</button>`).join('')}</div>`;
+  $('messages').appendChild(div);
+  div.querySelectorAll('[data-opt]').forEach(b => b.onclick = () => send(b.dataset.opt));
+  $('messages').scrollTop = $('messages').scrollHeight;
+}
+async function showUnit(cite) {
+  try {
+    const r = await api(`/resolve?citation=${encodeURIComponent(cite)}`);
+    if (!r.unit_id) return alert('не удалось резолвить: ' + cite);
+    const u = await api(`/units/${r.unit_id}?as_of=${state.asOf||''}`);
+    $('unit-title').textContent = u.label; $('unit-meta').textContent = `${u.context||''} · действует ${u.valid_from||'?'} … ${u.valid_to||'наст. время'}`;
+    $('unit-text').textContent = u.full_text; $('unit-dialog').showModal();
+  } catch (e) { alert(e.message); }
+}
+async function send(text) {
+  if (!state.slug) return alert('выберите дело');
+  text = (text || $('composer').value).trim(); if (!text) return;
+  $('composer').value = ''; addMessage('user', text);
+  $('send').disabled = true; $('session-status').innerHTML = '<span class="spinner"></span> агент работает…';
+  try {
+    const body = JSON.stringify({message: text});
+    const r = state.session
+      ? await api(`/workspaces/${state.slug}/sessions/${state.session}/messages`, {method:'POST', body})
+      : await api(`/workspaces/${state.slug}/sessions`, {method:'POST', body});
+    state.session = r.session_id;
+    if (r.kind === 'question') { state.pending = r.question; addQuestion(r.question); }
+    else { state.pending = null; addMessage('agent', r.text, r.verification); }
+    $('session-status').textContent = `сессия ${r.session_id} · ${r.status} · вызовов: ${r.tool_calls}` + (r.files_written?.length ? ` · файлы: ${r.files_written.join(', ')}` : '');
+    const w = await api(`/workspaces/${state.slug}`); renderFiles(w.files); renderTasks(w.tasks); renderSessions(w.sessions);
+  } catch (e) { addMessage('agent', 'Ошибка: ' + e.message); $('session-status').textContent = ''; }
+  finally { $('send').disabled = false; }
+}
+$('send').onclick = () => send();
+$('composer').addEventListener('keydown', e => { if (e.key === 'Enter' && e.ctrlKey) send(); });
+$('new-session').onclick = () => { state.session = null; state.pending = null; $('messages').innerHTML = ''; $('session-status').textContent = 'новая сессия'; };
+$('ws-new').onsubmit = async e => {
+  e.preventDefault(); const f = new FormData(e.target);
+  const payload = {slug:f.get('slug'), title:f.get('title'), client:f.get('client')||''}; if (f.get('as_of')) payload.as_of = f.get('as_of');
+  try { await api('/workspaces', {method:'POST', body: JSON.stringify(payload)}); e.target.reset(); await loadWorkspaces(); openWorkspace(payload.slug); } catch (err) { alert(err.message); }
+};
+$('upload-btn').onclick = () => { if (!state.slug) return alert('выберите дело'); $('upload').click(); };
+$('upload').onchange = async e => {
+  for (const file of e.target.files) {
+    const buf = await file.arrayBuffer(); let bin = ''; new Uint8Array(buf).forEach(b => bin += String.fromCharCode(b));
+    await api(`/workspaces/${state.slug}/files`, {method:'POST', body: JSON.stringify({name:file.name, content_base64: btoa(bin), dest:'inbox'})});
+  }
+  const w = await api(`/workspaces/${state.slug}`); renderFiles(w.files); e.target.value = '';
+};
+api('/health').then(h => $('backend').textContent = 'бэкенд: ' + h.backend).catch(()=>{});
+loadWorkspaces();
+</script>
+</body>
+</html>
