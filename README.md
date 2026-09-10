@@ -28,6 +28,7 @@ src/taxcorpus/
                   LocalCorpus (JSONL, офлайн); описания для function calling
   agent.py      — тонкий агент над function calling (ручной цикл, без фреймворков):
                   системный промпт «цитируй или откажись», проверка цитат, переработка, журнал
+  evaluation.py — метрики §6 плана по ответам агента; прогон — scripts/eval_agent.py
   cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term / deadline / ask
 sql/schema.sql  — Act / Edition / Unit / UnitText / Reference / Amendment / Parameter / Term /
                   raw_document / parse_run
@@ -106,6 +107,10 @@ python -m taxcorpus deadline --start 2025-03-20 --amount 3 --unit months
 # (ANTHROPIC_API_KEY или `ant auth login`); модель по умолчанию claude-opus-5:
 python -m taxcorpus ask --question "Сколько длится камеральная проверка?" --as-of 2026-09-10 --log reports/ask.json
 python -m taxcorpus ask --question "…" --local   # офлайн-корпус из JSONL без БД (поиск грубый)
+
+# оценка агента на эталоне (метрики §6 плана: citation precision/recall, hallucination
+# rate, temporal correctness, abstention; каждый вопрос — платный запрос к модели):
+python scripts/eval_agent.py --limit 5 [--local]   # -> reports/eval_agent.{json,md}
 
 # отчёт по частично разрешённым ссылкам (очередь сверки):
 python scripts/report_partial.py
