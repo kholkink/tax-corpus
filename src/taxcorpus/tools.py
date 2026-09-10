@@ -382,4 +382,10 @@ def execute_tool(corpus: Corpus, name: str, args: dict, as_of: str,
             return json.dumps({"error": f"неизвестный инструмент {name}"}, ensure_ascii=False), True
         return json.dumps(result, ensure_ascii=False, default=str), False
     except Exception as exc:  # инструмент не должен ронять цикл агента
+        conn = getattr(corpus, "conn", None)
+        if conn is not None:
+            try:
+                conn.rollback()  # снять прерванную транзакцию, если соединение не autocommit
+            except Exception:  # noqa: BLE001
+                pass
         return json.dumps({"error": f"{type(exc).__name__}: {exc}"}, ensure_ascii=False), True

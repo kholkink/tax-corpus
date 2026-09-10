@@ -26,7 +26,10 @@ def connect(db_url: str | None = None) -> psycopg.Connection:
     from . import load_dotenv
     load_dotenv()
     url = db_url or os.environ.get("TAXCORPUS_DB") or DEFAULT_DB_URL
-    return psycopg.connect(url, row_factory=dict_row)
+    # autocommit: ошибка одного запроса не оставляет соединение в прерванной транзакции
+    # (иначе все последующие вызовы инструментов агента падали бы с InFailedSqlTransaction);
+    # загрузчики используют явные with conn.transaction()
+    return psycopg.connect(url, row_factory=dict_row, autocommit=True)
 
 
 def ensure_schema(conn: psycopg.Connection, schema_path: str | Path | None = None) -> None:

@@ -29,7 +29,8 @@ SYSTEM_PROMPT = """Ты — ассистент налогового юриста
 2. Все нормы берутся на дату {as_of}. Если в вопросе дата не названа, считай ею {as_of} и скажи об этом явно в ответе.
 3. Числа (ставки, сроки, штрафы) — сначала get_parameter; если параметра нет, процитируй текст единицы из get_unit. Сроки считай только compute_deadline.
 4. Если релевантных норм не найдено или уверенность низкая — напиши «В корпусе нет достаточных оснований для ответа» и объясни, чего не хватает. Не додумывай.
-5. Письма Минфина/ФНС, постановления Пленума и обзоры цитируй только те, что вернули get_interpretations или search_interpretations (номер и дата — из результата), с пометкой, что это ненормативная позиция, и с датой: письмо могло относиться к прежней редакции нормы. Письма со status = outdated (снятые с применения) не используй как основание — упомяни лишь как отменённую позицию. Письма ФНС с mandatory = true обязательны для налоговых органов — скажи об этом. Если инструменты ничего не вернули — так и напиши.
+5. Бюджет: обычно достаточно 3–6 вызовов инструментов (search -> get_unit -> get_parameter/list_amendments/get_interpretations). Если search дважды не нашёл нужного, не перебирай формулировки дальше — отвечай по найденному или откажись по правилу 4. Не вызывай один и тот же инструмент с теми же аргументами повторно.
+6. Письма Минфина/ФНС, постановления Пленума и обзоры цитируй только те, что вернули get_interpretations или search_interpretations (номер и дата — из результата), с пометкой, что это ненормативная позиция, и с датой: письмо могло относиться к прежней редакции нормы. Письма со status = outdated (снятые с применения) не используй как основание — упомяни лишь как отменённую позицию. Письма ФНС с mandatory = true обязательны для налоговых органов — скажи об этом. Если инструменты ничего не вернули — так и напиши.
 
 Формат ответа (заголовки обязательны):
 **Вывод** — прямой ответ в 1–3 предложениях.
@@ -38,6 +39,8 @@ SYSTEM_PROMPT = """Ты — ассистент налогового юриста
 **Что изменилось** — если у ключевых норм есть правки за последние 3 года (list_amendments), кратко: когда и каким законом; иначе «существенных изменений в корпусе не зафиксировано».
 **Уверенность** — высокая / средняя / низкая и почему.
 **Дата** — на какую дату даны нормы."""
+
+FINAL_PROMPT = """Лимит вызовов инструментов исчерпан. Дай финальный ответ в требуемом формате только по уже полученным результатам инструментов; норм, которых среди них нет, не цитируй. Если собранного недостаточно — откажись по правилу 4."""
 
 REWORK_PROMPT = """Проверка цитат нашла проблемы:
 {problems}
@@ -94,7 +97,7 @@ class TaxAgent:
         self.fallbacks = fallbacks
         self.calendar = calendar
 
-    def _create(self, system: str, messages: list[dict]):
+    def _create(self, system: str, messages: list[dict], tool_choice: dict | None = None):
         kwargs = dict(
             model=self.model,
             max_tokens=16000,
@@ -104,6 +107,8 @@ class TaxAgent:
             thinking={"type": "adaptive"},
             output_config={"effort": self.effort},
         )
+        if tool_choice is not None:
+            kwargs["tool_choice"] = tool_choice
         if self.fallbacks:
             # серверный фолбэк при отказе классификаторов безопасности (см. skill claude-api)
             with self.client.beta.messages.stream(
@@ -115,7 +120,10 @@ class TaxAgent:
 
     def _run_loop(self, system: str, messages: list[dict], calls: list[ToolCall],
                   as_of: str, usage: dict):
-        """Цикл tool use до конца хода модели; возвращает последний ответ."""
+        """Цикл tool use до конца хода модели; возвращает последний ответ.
+
+        Если лимит раундов исчерпан, а модель всё ещё зовёт инструменты, просим
+        финальный ответ без инструментов (tool_choice none) — иначе ответ пустой."""
         response = None
         for _ in range(self.max_tool_rounds + 1):
             response = self._create(system, messages)
@@ -141,6 +149,13 @@ class TaxAgent:
                     item["is_error"] = True
                 results.append(item)
             messages.append({"role": "user", "content": results})
+        # лимит исчерпан: финальный ответ по собранному, инструменты выключены
+        messages.append({"role": "user", "content": FINAL_PROMPT})
+        response = self._create(system, messages, tool_choice={"type": "none"})
+        u = getattr(response, "usage", None)
+        if u is not None:
+            for key in ("input_tokens", "output_tokens", "cache_read_input_tokens"):
+                usage[key] = usage.get(key, 0) + (getattr(u, key, 0) or 0)
         return response
 
     def _verify(self, answer: str, as_of: str) -> VerificationReport:
