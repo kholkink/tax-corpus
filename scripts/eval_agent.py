@@ -33,6 +33,7 @@ def main() -> int:
     ap.add_argument("--model", default=None, help="по умолчанию TAXCORPUS_MODEL из .env")
     ap.add_argument("--effort", default="high")
     ap.add_argument("--db-url", default=None)
+    ap.add_argument("--no-resume", action="store_true", help="не пропускать уже оценённые вопросы")
     args = ap.parse_args()
 
     import anthropic
@@ -55,24 +56,39 @@ def main() -> int:
     if args.limit:
         questions = questions[: args.limit]
 
+    # инкрементально: каждый ответ дописывается в eval_agent_runs.jsonl, повторный
+    # запуск пропускает уже оценённые вопросы (прогон дорогой и долгий)
+    runs_path = ROOT / "reports" / "eval_agent_runs.jsonl"
+    runs: list[dict] = []
+    if runs_path.exists() and not args.no_resume:
+        runs = [json.loads(l) for l in runs_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+        runs = [r for r in runs if r.get("model") == args.model and r.get("as_of") == args.as_of]
+    done = {r["question"]["id"] for r in runs}
     summary = EvalSummary()
-    runs = []
     try:
-        for q in questions:
-            print(f"=== {q['id']} {q['question']}", flush=True)
-            result = agent.ask(q["question"], args.as_of)
-            checks = [c.__dict__ for c in result.verification.checks]
-            score = score_answer(q["id"], q["expected"], result.answer, checks,
-                                 reworked=result.reworked, tool_calls=len(result.tool_calls),
-                                 expected_abstain=q["kind"] == "agent_abstain")
-            summary.scores.append(score)
-            runs.append({"question": q, "result": result.to_dict(), "score": score.__dict__})
-            print(f"    P/R unit {score.precision_unit}/{score.recall_unit}, "
-                  f"галлюцинаций {score.hallucinations}, вызовов {score.tool_calls}", flush=True)
+        with runs_path.open("a", encoding="utf-8") as fh:
+            for q in questions:
+                if q["id"] in done:
+                    continue
+                print(f"=== {q['id']} {q['question']}", flush=True)
+                result = agent.ask(q["question"], args.as_of)
+                checks = [c.__dict__ for c in result.verification.checks]
+                score = score_answer(q["id"], q["expected"], result.answer, checks,
+                                     reworked=result.reworked, tool_calls=len(result.tool_calls),
+                                     expected_abstain=q["kind"] == "agent_abstain")
+                run = {"question": q, "result": result.to_dict(), "score": score.__dict__,
+                       "model": args.model, "as_of": args.as_of}
+                runs.append(run)
+                fh.write(json.dumps(run, ensure_ascii=False) + "\n")
+                fh.flush()
+                print(f"    P/R unit {score.precision_unit}/{score.recall_unit}, "
+                      f"галлюцинаций {score.hallucinations}, вызовов {score.tool_calls}", flush=True)
     finally:
         if conn is not None:
             conn.close()
 
+    from taxcorpus.evaluation import QuestionScore
+    summary.scores = [QuestionScore(**r["score"]) for r in runs]
     out_json = ROOT / "reports" / "eval_agent.json"
     out_md = ROOT / "reports" / "eval_agent.md"
     out_json.write_text(json.dumps({"as_of": args.as_of, "model": args.model,
