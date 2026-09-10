@@ -91,3 +91,12 @@ def test_agent_flags_unknown_letters():
     result = TaxAgent(client, corpus, fallbacks=False).ask("?", "2026-09-10")
     assert result.reworked and result.verification.ok
     assert "03-03-06/1/999" in client.requests[1]["messages"][-1]["content"]
+
+
+def test_search_interpretations_offline():
+    corpus = LocalCorpus.from_records(_records(), {"nk1": "2026-08-04"}, documents=[LETTER, PLENUM, LATE])
+    rows = corpus.search_interpretations("сроки камеральной проверки", "2026-09-10")
+    assert rows and rows[0]["doc_id"] == "fns-2024-03-11-bs-4-11-2702" and rows[0]["approximate"]
+    assert all(r["date"] <= "2026-09-10" for r in rows)
+    out, err = execute_tool(corpus, "search_interpretations", {"query": "камеральная"}, "2026-09-10")
+    assert not err and "fns-2024" in out

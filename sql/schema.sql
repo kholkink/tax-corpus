@@ -197,3 +197,12 @@ CREATE TABLE IF NOT EXISTS doc_reference (
     confidence   REAL NOT NULL DEFAULT 1.0
 );
 CREATE INDEX IF NOT EXISTS idx_doc_reference_unit ON doc_reference(to_unit_id);
+
+-- слой 4: отдельный индекс по разъяснениям (заголовок + текст)
+ALTER TABLE document ADD COLUMN IF NOT EXISTS search_vector tsvector
+    GENERATED ALWAYS AS (setweight(to_tsvector('russian', coalesce(title, '')), 'A')
+                         || setweight(to_tsvector('russian', text), 'B')) STORED;
+CREATE INDEX IF NOT EXISTS idx_document_search ON document USING GIN (search_vector);
+ALTER TABLE document ADD COLUMN IF NOT EXISTS status TEXT;      -- actual | outdated
+ALTER TABLE document ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE document ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '[]'::jsonb;
