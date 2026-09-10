@@ -116,6 +116,10 @@ python -m taxcorpus ask --question "…" --local   # офлайн-корпус �
 python -m taxcorpus interpretations --id nk1.ch14.art88.p2 --as-of 2026-09-10
 python -m taxcorpus load-docs --input data/interpretations   # -> таблицы document / doc_reference
 
+# краулер писем ФНС, обязательных для налоговых органов (nalog.gov.ru, первоисточник,
+# 1 запрос / 2 с, повторный запуск дописывает): статус актуальности, теги по статьям НК:
+python scripts/fetch_fns_letters.py --pages 114          # весь раздел, ~1705 писем
+
 # оценка агента на эталоне (метрики §6 плана: citation precision/recall, hallucination
 # rate, temporal correctness, abstention; каждый вопрос — платный запрос к модели):
 python scripts/eval_agent.py --limit 5 [--local]   # -> reports/eval_agent.{json,md}
