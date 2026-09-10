@@ -1,8 +1,10 @@
 """Интеграционные тесты слоя БД. Пропускаются, если локальный Postgres недоступен."""
 
+import os
+
 import pytest
 
-DB_URL = "postgresql://postgres@127.0.0.1:5432/taxcorpus"
+DB_URL = os.environ.get("TAXCORPUS_DB", "postgresql://postgres@127.0.0.1:5432/taxcorpus")
 
 psycopg = pytest.importorskip("psycopg")
 
@@ -69,3 +71,34 @@ def test_list_amendments_since_filter():
         old_rows = list_amendments(conn, "nk1.ch1.art6-1", since="2020-01-01")
     assert all_rows, "у ст. 6.1 должна быть правка 137-ФЗ от 2006"
     assert len(old_rows) < len(all_rows)
+
+
+def test_search_units_strict_then_loose():
+    from taxcorpus.db import search_units
+
+    with _conn() as conn:
+        rows = search_units(conn, "камеральная налоговая проверка проводится в течение трех месяцев",
+                            "2026-09-10", limit=5)
+        assert rows and rows[0]["unit_id"].startswith("nk1.ch14.art88")
+        assert all(r["pass"] in ("strict", "loose") for r in rows)
+        # лишнее слово не обнуляет выдачу: строгий проход пуст, работает добор по «ИЛИ»
+        rows = search_units(conn, "выездная проверка не может продолжаться более двух месяцев абракадабра",
+                            "2026-09-10", limit=5)
+        assert rows and rows[0]["pass"] == "loose"
+
+
+def test_parameter_terms_interpretations_snapshot():
+    from taxcorpus.db import create_snapshot, find_terms, get_interpretations, get_parameter, search_documents
+
+    with _conn() as conn:
+        p = get_parameter(conn, "vat_rate_general", "2026-09-10")
+        assert p and float(p["value"]) == 22 and "22 процента" in p["source_text"]
+        assert get_parameter(conn, "vat_rate_general", "2025-06-01") is None  # valid_from 2026-01-01
+        terms = find_terms(conn, "индивидуальн", "2026-09-10")
+        assert terms and terms[0]["definition_unit_id"].startswith("nk1.ch1.art11.p2")
+        docs = get_interpretations(conn, "nk1.ch14.art88", "2026-09-10", 5)
+        assert docs and all(str(d["date"]) <= "2026-09-10" for d in docs)
+        found = search_documents(conn, "камеральная проверка", "2026-09-10", 3)
+        assert found and found[0]["snippet"]
+        snap = create_snapshot(conn, "test")
+        assert snap["counts"]["unit"] > 30000 and snap["snapshot_id"] >= 1

@@ -1,50 +1,54 @@
 #!/usr/bin/env bash
-# Развёртывание локального PostgreSQL 16 без прав администратора (user-space).
-# Источник бинарников: io.zonky.test.postgres:embedded-postgres-binaries-windows-amd64 (Maven Central).
+# Локальный PostgreSQL 16 без прав администратора (user-space) для Windows (Git Bash) и Linux/WSL.
+# Бинарники: io.zonky.test.postgres:embedded-postgres-binaries-{windows,linux}-amd64 (Maven Central).
+# Использование: bash scripts/setup_postgres.sh [порт]   (по умолчанию 5432; в WSL порт 5432 часто
+# занят Windows-инстансом — укажите 5433 и экспортируйте TAXCORPUS_DB).
 set -euo pipefail
 
 BASE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"  # корень проекта, без привязки к машине
+PORT="${1:-5432}"
 PGROOT="$BASE/.pg"
-JARDIR="$PGROOT/downloads"
-INST="$PGROOT/instance"
-JAR="$JARDIR/pg16.jar"
-URL="https://repo1.maven.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-windows-amd64/16.4.0/embedded-postgres-binaries-windows-amd64-16.4.0.jar"
 
-echo "=== [1/6] download ==="
+case "$(uname -s)" in
+  Linux*)  OS=linux;   EXE="";     TAR="tar" ;;
+  *)       OS=windows; EXE=".exe"; TAR="MSYS_NO_PATHCONV=1 C:/Windows/System32/tar.exe" ;;
+esac
+JARDIR="$PGROOT/$OS/downloads"
+INST="$PGROOT/$OS/instance"
+JAR="$JARDIR/pg16.jar"
+URL="https://repo1.maven.org/maven2/io/zonky/test/postgres/embedded-postgres-binaries-$OS-amd64/16.4.0/embedded-postgres-binaries-$OS-amd64-16.4.0.jar"
+
+echo "=== [1/5] download ($OS) ==="
 if [ ! -f "$JAR" ]; then
   mkdir -p "$JARDIR"
   curl -sSL --retry 3 -o "$JAR" "$URL"
 fi
-ls -la "$JAR"
 
-echo "=== [2/6] unzip jar ==="
-rm -rf "$JARDIR/jar"
-mkdir -p "$JARDIR/jar"
-python -m zipfile -e "$JAR" "$JARDIR/jar/"
-ls -la "$JARDIR/jar/"
-
-echo "=== [3/6] extract txz ==="
+echo "=== [2/5] extract ==="
+rm -rf "$JARDIR/jar" "$INST"
+mkdir -p "$JARDIR/jar" "$INST"
+python -m zipfile -e "$JAR" "$JARDIR/jar/" 2>/dev/null || python3 -m zipfile -e "$JAR" "$JARDIR/jar/"
 TXZ=$(ls "$JARDIR/jar/"*.txz | head -1)
-echo "txz: $TXZ"
-rm -rf "$INST"
-mkdir -p "$INST"
-MSYS_NO_PATHCONV=1 C:/Windows/System32/tar.exe -xJf "$TXZ" -C "$INST"
-ls "$INST/bin" | head -20
+eval "$TAR -xJf \"$TXZ\" -C \"$INST\""
 
-echo "=== [4/6] initdb ==="
-rm -rf "$INST/data"
-"$INST/bin/initdb.exe" -D "$INST/data" -U postgres --auth=trust --encoding=UTF8 --no-locale
+echo "=== [3/5] initdb ==="
+"$INST/bin/initdb$EXE" -D "$INST/data" -U postgres --auth=trust --encoding=UTF8 --no-locale >/dev/null
 
-echo "=== [5/6] start ==="
-"$INST/bin/pg_ctl.exe" -D "$INST/data" -l "$INST/postgres.log" -o "-p 5432 -c listen_addresses=127.0.0.1" start
+echo "=== [4/5] start on port $PORT ==="
+"$INST/bin/pg_ctl$EXE" -D "$INST/data" -l "$INST/postgres.log" -o "-p $PORT -c listen_addresses=127.0.0.1" start
 
-for i in $(seq 1 15); do
-  if "$INST/bin/pg_isready.exe" -U postgres -p 5432; then break; fi
-  sleep 1
-done
-
-echo "=== [6/6] create db ==="
-"$INST/bin/createdb.exe" -U postgres -p 5432 taxcorpus 2>&1 || echo "(db уже существует?)"
-"$INST/bin/psql.exe" -U postgres -p 5432 -d taxcorpus -c "select version();"
-
-echo "POSTGRES READY: postgresql://postgres@localhost:5432/taxcorpus"
+echo "=== [5/5] create database ==="
+sleep 2
+DB_URL="postgresql://postgres@127.0.0.1:$PORT/taxcorpus"
+PY=$( [ -x "$BASE/.venv-linux/bin/python" ] && echo "$BASE/.venv-linux/bin/python" || echo python )
+"$PY" - "$PORT" <<'PYEOF'
+import sys, psycopg
+port = sys.argv[1]
+with psycopg.connect(f"postgresql://postgres@127.0.0.1:{port}/postgres", autocommit=True) as c:
+    if not c.execute("select 1 from pg_database where datname='taxcorpus'").fetchone():
+        c.execute("CREATE DATABASE taxcorpus")
+print("database taxcorpus ready")
+PYEOF
+echo
+echo "готово. Экспортируйте: export TAXCORPUS_DB=$DB_URL"
+echo "остановить: $INST/bin/pg_ctl$EXE -D $INST/data stop"

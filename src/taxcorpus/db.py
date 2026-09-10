@@ -88,8 +88,11 @@ def load_corpus(conn: psycopg.Connection, meta: dict, units: list[dict],
             "DELETE FROM reference WHERE to_unit_id IN (SELECT unit_id FROM unit WHERE act_id = %s)",
             "DELETE FROM term WHERE definition_unit_id IN (SELECT unit_id FROM unit WHERE act_id = %s)",
             "DELETE FROM parameter WHERE source_unit_id IN (SELECT unit_id FROM unit WHERE act_id = %s)",
+            "DELETE FROM doc_reference WHERE to_unit_id IN (SELECT unit_id FROM unit WHERE act_id = %s)",
         ):
             conn.execute(sql, (act_id,))
+        # рёбра interprets от писем к единицам этого акта удалены вместе с единицами:
+        # после перезагрузки акта их восстанавливает повторный load-docs
         conn.execute(
             """
             DELETE FROM amendment WHERE target_unit_id IN
@@ -162,6 +165,20 @@ def load_corpus(conn: psycopg.Connection, meta: dict, units: list[dict],
                 ],
             )
 
+            # ссылки на единицы другого акта (ч.1 -> ч.2), которого ещё нет в БД:
+            # to_unit_id откладывается в target.pending_unit_id и дозаполняется
+            # при загрузке второго акта (см. ниже relink)
+            known = {row["unit_id"] for row in cur.execute("SELECT unit_id FROM unit").fetchall()}
+            rows = []
+            pending = 0
+            for r in references:
+                target, to_unit = dict(r["target"]), r.get("to_unit_id")
+                if to_unit and to_unit not in known:
+                    target["pending_unit_id"], to_unit = to_unit, None
+                    pending += 1
+                rows.append((r["from_unit_id"], r["kind"], r["raw_citation"], Json(target),
+                             to_unit, r.get("status"), r.get("resolved_depth"),
+                             r.get("extracted_by", "regex"), r.get("confidence", 1.0)))
             cur.executemany(
                 """
                 INSERT INTO reference (from_unit_id, kind, raw_citation, target,
@@ -169,13 +186,17 @@ def load_corpus(conn: psycopg.Connection, meta: dict, units: list[dict],
                                        extracted_by, confidence)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                [
-                    (r["from_unit_id"], r["kind"], r["raw_citation"], Json(r["target"]),
-                     r.get("to_unit_id"), r.get("status"), r.get("resolved_depth"),
-                     r.get("extracted_by", "regex"), r.get("confidence", 1.0))
-                    for r in references
-                ],
+                rows,
             )
+            cur.execute(
+                """
+                UPDATE reference r SET to_unit_id = r.target->>'pending_unit_id',
+                                       target = r.target - 'pending_unit_id'
+                WHERE r.to_unit_id IS NULL AND r.target ? 'pending_unit_id'
+                  AND EXISTS (SELECT 1 FROM unit u WHERE u.unit_id = r.target->>'pending_unit_id')
+                """
+            )
+            relinked = cur.rowcount
 
             if amendments:
                 cur.executemany(
@@ -199,7 +220,8 @@ def load_corpus(conn: psycopg.Connection, meta: dict, units: list[dict],
         )
 
     return {"act_id": act_id, "edition_id": edition_id, "units": len(units),
-            "references": len(references), "amendments": len(amendments)}
+            "references": len(references), "amendments": len(amendments),
+            "references_pending": pending, "references_relinked": relinked}
 
 
 def get_unit(conn, unit_id: str, as_of_date: str) -> dict | None:
@@ -269,26 +291,31 @@ def expand_query(query: str) -> list[str]:
 
 def search_units(conn, query: str, as_of_date: str, limit: int = 10,
                  kind: str | None = None, chunks_only: bool = True) -> list[dict]:
-    """Полнотекстовый поиск (лексическое плечо гибридного поиска, слой 4; ts_rank, не BM25).
+    """Полнотекстовый поиск (лексическое плечо гибридного поиска, слой 4; ts_rank_cd, не BM25).
 
-    Чанк = пункт/подпункт (или статья без пунктов) с полным текстом и контекстом
-    заголовков (вес B) — как в плане, §5 слой 4. По умолчанию ищем только по чанкам,
-    чтобы одна и та же фраза не всплывала на уровне статьи, пункта и абзаца сразу;
-    kind= переключает на конкретный вид единицы, chunks_only=False — на все.
-    websearch_to_tsquery понимает естественный синтаксис («камеральная OR
-    выездная проверка»); индекс всегда фильтруется по as_of_date. Аббревиатуры
-    (НДС, ЕНС, ...) расширяются полными формами как OR-ветки — кодекс их
-    пишет словами.
+    Два прохода: строгий (все слова запроса, websearch_to_tsquery) с ранжированием
+    ts_rank_cd по тексту (вес A) и контексту заголовков (вес B); если результатов меньше
+    limit — добор по «ИЛИ» всех лемм запроса с нормализацией по длине (norm 32).
+    Аббревиатуры (НДС, ЕНС, …) расширяются полными формами как OR-ветки строгого прохода.
+    На эталоне v0: unit@5 = 17/23; оставшиеся промахи требуют семантического поиска.
+    Чанк = пункт/подпункт (или статья без пунктов); kind= переключает на вид единицы,
+    chunks_only=False — на все единицы.
     """
     expansions = expand_query(query)
     chunk_filter = chunks_only and kind is None
-    return conn.execute(
-        """
-        SELECT u.unit_id, u.kind, u.label, u.title, u.context,
+    common_where = """
+          AND (t.valid_from IS NULL OR t.valid_from <= %s)
+          AND (t.valid_to IS NULL OR t.valid_to > %s)
+          AND (%s::text IS NULL OR u.kind = %s::text)
+          AND (NOT %s::boolean OR u.is_chunk)
+    """
+    strict = conn.execute(
+        f"""
+        SELECT u.unit_id, u.kind, u.label, u.title, u.context, 'strict' AS pass,
                GREATEST(
-                   ts_rank(setweight(t.search_vector, 'A') || setweight(u.context_vector, 'B'),
-                           q_main),
-                   COALESCE((SELECT max(ts_rank(t.search_vector,
+                   ts_rank_cd(setweight(t.search_vector, 'A') || setweight(u.context_vector, 'B'),
+                              q_main),
+                   COALESCE((SELECT max(ts_rank_cd(t.search_vector,
                                    phraseto_tsquery('russian', e.phrase)))
                              FROM unnest(%s::text[]) AS e(phrase)), 0)
                ) AS rank,
@@ -302,16 +329,36 @@ def search_units(conn, query: str, as_of_date: str, limit: int = 10,
             OR u.context_vector @@ q_main
             OR EXISTS (SELECT 1 FROM unnest(%s::text[]) AS e(phrase)
                        WHERE t.search_vector @@ phraseto_tsquery('russian', e.phrase)))
-          AND (t.valid_from IS NULL OR t.valid_from <= %s)
-          AND (t.valid_to IS NULL OR t.valid_to > %s)
-          AND (%s::text IS NULL OR u.kind = %s::text)
-          AND (NOT %s::boolean OR u.is_chunk)
+        {common_where}
         ORDER BY rank DESC
         LIMIT %s
         """,
-        (expansions, query, expansions,
-         as_of_date, as_of_date, kind, kind, chunk_filter, limit),
+        (expansions, query, expansions, as_of_date, as_of_date, kind, kind, chunk_filter, limit),
     ).fetchall()
+    if len(strict) >= limit:
+        return strict
+    seen = {r["unit_id"] for r in strict}
+    loose = conn.execute(
+        f"""
+        WITH lex AS (SELECT string_agg(l, ' | ') AS s
+                     FROM unnest(tsvector_to_array(to_tsvector('russian', %s))) AS l),
+             qq AS (SELECT to_tsquery('russian', s) AS q_or FROM lex WHERE s IS NOT NULL)
+        SELECT u.unit_id, u.kind, u.label, u.title, u.context, 'loose' AS pass,
+               ts_rank_cd(setweight(t.search_vector, 'A') || setweight(u.context_vector, 'B'),
+                          qq.q_or, 32) AS rank,
+               ts_headline('russian', coalesce(t.full_text, t.text), qq.q_or,
+                           'MaxWords=40, MinWords=15, StartSel=«, StopSel=», MaxFragments=2')
+                   AS snippet
+        FROM unit_text t JOIN unit u ON u.unit_id = t.unit_id, qq
+        WHERE (t.search_vector @@ qq.q_or OR u.context_vector @@ qq.q_or)
+          AND NOT (u.unit_id = ANY(%s::text[]))
+        {common_where}
+        ORDER BY rank DESC
+        LIMIT %s
+        """,
+        (query, list(seen), as_of_date, as_of_date, kind, kind, chunk_filter, limit - len(strict)),
+    ).fetchall()
+    return [*strict, *loose]
 
 
 # --- слой 3: параметры и термины -------------------------------------------------
@@ -423,14 +470,20 @@ def load_documents_db(conn, docs: list, edges: list[dict]) -> int:
                      d.source_url, d.mandatory, d.retrieved_at, d.sha256,
                      d.status, d.category, Json(d.tags or [])),
                 )
+            known = {row["unit_id"] for row in cur.execute("SELECT unit_id FROM unit").fetchall()}
+            kept = [e for e in edges if e["to_unit_id"] in known]
             cur.executemany(
                 """
                 INSERT INTO doc_reference (doc_id, to_unit_id, kind, raw_citation, status, confidence)
                 VALUES (%s, %s, %s, %s, %s, %s)
                 """,
                 [(e["doc_id"], e["to_unit_id"], e["kind"], e["raw_citation"], e["status"],
-                  e["confidence"]) for e in edges],
+                  e["confidence"]) for e in kept],
             )
+    if len(kept) < len(edges):
+        import sys
+        print(f"[warn] рёбер на отсутствующие в БД единицы пропущено: {len(edges) - len(kept)}",
+              file=sys.stderr)
     return len(docs)
 
 

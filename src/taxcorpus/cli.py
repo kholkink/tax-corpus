@@ -174,7 +174,10 @@ def cmd_load(args: argparse.Namespace) -> int:
         if parameters_path and parameters_path.exists():
             seed = json.loads(parameters_path.read_text(encoding="utf-8"))["parameters"]
             # параметры ссылаются на единицы обоих актов: грузим только те, чьи источники уже в БД
-            known = {r["unit_id"] for r in conn.execute("SELECT unit_id FROM unit").fetchall()}
+            # запрос вне with conn.transaction() открыл бы неявную транзакцию, внутри которой
+            # load_parameters стал бы savepoint'ом и откатился при закрытии соединения
+            with conn.transaction():
+                known = {r["unit_id"] for r in conn.execute("SELECT unit_id FROM unit").fetchall()}
             rows = [p for p in seed if p["source_unit_id"] in known]
             result["parameters"] = load_parameters(conn, rows, edition_from)
             if len(rows) < len(seed):
@@ -184,9 +187,12 @@ def cmd_load(args: argparse.Namespace) -> int:
         conn.close()
 
     print(f"загружено: act_id={result['act_id']}, edition_id={result['edition_id']}, "
-          f"units={result['units']}, references={result['references']}, "
-          f"amendments={result.get('amendments', 0)}, terms={result['terms']}, "
-          f"parameters={result['parameters']}")
+          f"units={result['units']}, references={result['references']} "
+          f"(отложено {result.get('references_pending', 0)}, дозаполнено "
+          f"{result.get('references_relinked', 0)}), amendments={result.get('amendments', 0)}, "
+          f"terms={result['terms']}, parameters={result['parameters']}")
+    print("[внимание] рёбра писем к единицам этого акта пересозданы не были: выполните "
+          "`load-docs` повторно", file=sys.stderr)
     return 0
 
 
