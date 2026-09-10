@@ -20,3 +20,4 @@ data/processed/*.txt
 data/raw/sources/
 *:Zone.Identifier
 data/raw/fns/
+data/raw/minfin/
