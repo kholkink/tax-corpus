@@ -143,11 +143,37 @@ def sync_facts(conn, ws: Workspace, workspace_id: int) -> int:
     return len(facts)
 
 
+def sync_collab(conn, ws: Workspace, workspace_id: int) -> dict:
+    """Зеркало comments.json и activity.jsonl (F8)."""
+    from .collab import CollabStore
+    store = CollabStore(ws)
+    with conn.transaction():
+        for c in store.comments:
+            conn.execute(
+                """
+                INSERT INTO comment (comment_id, workspace_id, path, version, anchor, author, text, parent_id,
+                                     created_at, resolved, resolved_by, resolved_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (comment_id) DO UPDATE SET resolved = EXCLUDED.resolved,
+                    resolved_by = EXCLUDED.resolved_by, resolved_at = EXCLUDED.resolved_at, text = EXCLUDED.text
+                """,
+                (c["comment_id"], workspace_id, c["path"], c.get("version"), c.get("anchor"), c["author"], c["text"],
+                 c.get("parent_id"), c["created_at"], c["resolved"], c.get("resolved_by"), c.get("resolved_at")))
+        entries = store.activity(limit=100000)
+        for e in entries:
+            conn.execute(
+                "INSERT INTO activity (workspace_id, at, actor, action, target, details) VALUES (%s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT DO NOTHING",
+                (workspace_id, e["at"], e["actor"], e["action"], e.get("target"), Json(e.get("details") or {})))
+    return {"comments": len(store.comments), "activity": len(entries)}
+
+
 def sync_workspace(conn, ws: Workspace, agent=None) -> dict:
-    """Полная синхронизация дела: манифест, файлы, факты, все сессии (по файлам sessions/)."""
+    """Полная синхронизация дела: манифест, файлы, факты, комментарии и журнал, все сессии."""
     workspace_id = upsert_workspace(conn, ws)
     files = sync_files(conn, ws, workspace_id)
     facts = sync_facts(conn, ws, workspace_id)
+    collab = sync_collab(conn, ws, workspace_id)
     sessions = 0
     for p in sorted((ws.path / "sessions").glob("*.json")):
         data = json.loads(p.read_text(encoding="utf-8"))
@@ -178,7 +204,7 @@ def sync_workspace(conn, ws: Workspace, agent=None) -> dict:
                      q.get("asked_at"), q.get("answer"), q.get("answered_at")),
                 )
         sessions += 1
-    return {"workspace_id": workspace_id, "files": files, "facts": facts, "sessions": sessions}
+    return {"workspace_id": workspace_id, "files": files, "facts": facts, "sessions": sessions, **collab}
 
 
 def subscriptions_for(conn, workspace_id: int) -> list[str]:

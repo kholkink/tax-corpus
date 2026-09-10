@@ -90,6 +90,14 @@
     <div id="files"></div>
     <h2>Просмотр</h2>
     <pre class="viewer" id="viewer">—</pre>
+    <h2>Комментарии <span class="status" id="comments-file"></span></h2>
+    <div id="comments"></div>
+    <form id="comment-new" style="display:grid; grid-template-columns: 1fr auto; gap:4px">
+      <input name="text" placeholder="замечание к выбранному файлу агента" required>
+      <button>Добавить</button>
+    </form>
+    <h2>Активность</h2>
+    <div id="activity" class="status"></div>
     <h2>Черновик по шаблону</h2>
     <form id="draft-new" style="display:grid; grid-template-columns: 1fr 1fr auto; gap:4px">
       <select name="template" id="draft-template"></select>
@@ -167,7 +175,7 @@ const api = (path, opts={}) => fetch(path, {...opts, headers:{'Content-Type':'ap
   return r.json();
 });
 const $ = id => document.getElementById(id);
-const state = { slug:null, session:null, pending:null, asOf:null };
+const state = { slug:null, session:null, pending:null, asOf:null, file:null };
 
 async function loadWorkspaces() {
   const list = await api('/workspaces');
@@ -179,7 +187,7 @@ async function openWorkspace(slug) {
   const w = await api(`/workspaces/${slug}`);
   state.asOf = w.manifest.as_of;
   $('ws-meta').textContent = `${w.manifest.title} · as_of ${w.manifest.as_of}` + (w.manifest.corpus_snapshot ? ` · снимок #${w.manifest.corpus_snapshot}` : '') + (w.manifest.confidentiality === 'sensitive' ? ' · ЧУВСТВИТЕЛЬНОЕ' : '') + (w.provider ? ` · ${w.provider}` : '');
-  renderFiles(w.files); renderTasks(w.tasks); renderSessions(w.sessions);
+  renderFiles(w.files); renderTasks(w.tasks); renderSessions(w.sessions); state.file = null; $('comments').innerHTML = ''; $('comments-file').textContent = ''; loadActivity();
   $('messages').innerHTML = '<div class="status">Новая сессия: опишите задачу или выберите сессию справа.</div>';
   $('session-status').textContent = '';
   loadWorkspaces();
@@ -189,6 +197,7 @@ function renderFiles(files) {
   document.querySelectorAll('.file').forEach(el => el.onclick = async () => {
     const r = await api(`/workspaces/${state.slug}/files/${encodeURIComponent(el.dataset.path).replace(/%2F/g,'/')}`);
     $('viewer').textContent = r.text + (r.truncated ? '\n\n… (показаны первые символы, всего ' + r.chars + ')' : '');
+    state.file = el.dataset.path; loadComments();
   });
 }
 function renderTasks(tasks) {
@@ -262,6 +271,27 @@ async function showCard(unitId) {
   $('card-params').innerHTML = c.parameters.length ? '<table class="facts"><tr><th>параметр</th><th>значение</th><th>с</th><th>по</th><th>якорь</th></tr>' + c.parameters.map(p => `<tr><td>${esc(p.title||p.name)}</td><td>${p.value} ${esc(p.unit)}</td><td>${p.valid_from||'?'}</td><td>${p.valid_to||'—'}</td><td class="status">${esc(p.anchor)}</td></tr>`).join('') + '</table>' : '<div class="status">параметров (ставок, сроков), заякоренных в этой норме, нет</div>';
   cardTab('text'); $('unit-dialog').showModal();
 }
+// --- комментарии и журнал (F8) ---
+async function loadComments() {
+  if (!state.slug || !state.file) return;
+  $('comments-file').textContent = state.file;
+  const cs = await api(`/workspaces/${state.slug}/comments?path=${encodeURIComponent(state.file)}`);
+  const roots = cs.filter(c => !c.parent_id);
+  $('comments').innerHTML = roots.map(c => `<div class="task ${c.resolved?'done':''}"><b>${esc(c.author)}</b> <span class="status">${c.created_at.slice(0,16)} · v${c.version||'?'}</span>${c.anchor?`<div class="status">«${esc(c.anchor)}»</div>`:''}<div>${esc(c.text)}</div>` +
+    cs.filter(r => r.parent_id === c.comment_id).map(r => `<div style="margin-left:12px;border-left:2px solid var(--line);padding-left:6px"><b>${esc(r.author)}</b> <span class="status">${r.created_at.slice(0,16)}</span><div>${esc(r.text)}</div></div>`).join('') +
+    (c.resolved ? '' : `<button class="secondary" data-resolve="${c.comment_id}" style="padding:2px 6px">закрыть</button>`) + `</div>`).join('') || '<div class="status">комментариев нет</div>';
+  document.querySelectorAll('[data-resolve]').forEach(b => b.onclick = async () => { await api(`/workspaces/${state.slug}/comments/${b.dataset.resolve}/resolve`, {method:'POST'}); loadComments(); loadActivity(); });
+}
+async function loadActivity() {
+  if (!state.slug) return;
+  const a = await api(`/workspaces/${state.slug}/activity?limit=15`);
+  $('activity').innerHTML = a.map(e => `<div>${e.at.slice(5,16).replace('T',' ')} · <b>${esc(e.actor.replace('user:',''))}</b> ${esc(e.action)} ${esc(e.target||'')}</div>`).join('') || 'пока пусто';
+}
+$('comment-new').onsubmit = async e => {
+  e.preventDefault(); if (!state.file) return alert('выберите файл агента'); const f = new FormData(e.target);
+  const sel = (window.getSelection() || '').toString().trim();
+  try { await api(`/workspaces/${state.slug}/comments`, {method:'POST', body: JSON.stringify({path: state.file, text: f.get('text'), anchor: sel.slice(0,200) || null})}); e.target.reset(); loadComments(); loadActivity(); } catch (err) { alert(err.message); }
+};
 api('/templates').then(ts => $('draft-template').innerHTML = ts.map(t => `<option value="${esc(t.name)}" title="${esc(t.description)}">${esc(t.title)}</option>`).join('')).catch(()=>{});
 $('draft-new').onsubmit = async e => {
   e.preventDefault(); if (!state.slug) return alert('выберите дело'); const f = new FormData(e.target);
@@ -295,7 +325,7 @@ async function send(text) {
     if (r.kind === 'question') { state.pending = r.question; addQuestion(r.question); }
     else { state.pending = null; addMessage('agent', r.text, r.verification); }
     $('session-status').textContent = `сессия ${r.session_id} · ${r.status} · вызовов: ${r.tool_calls}` + (r.files_written?.length ? ` · файлы: ${r.files_written.join(', ')}` : '');
-    const w = await api(`/workspaces/${state.slug}`); renderFiles(w.files); renderTasks(w.tasks); renderSessions(w.sessions);
+    const w = await api(`/workspaces/${state.slug}`); renderFiles(w.files); renderTasks(w.tasks); renderSessions(w.sessions); loadActivity(); if (state.file) loadComments();
   } catch (e) { addMessage('agent', 'Ошибка: ' + e.message); $('session-status').textContent = ''; }
   finally { $('send').disabled = false; }
 }

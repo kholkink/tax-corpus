@@ -41,6 +41,7 @@ src/taxcorpus/
   providers.py  — профили провайдера модели (P4); redact.py — маскировка ПДн для облака (F9)
   positions.py  — карта позиций по норме (F4); templates.py / export.py — шаблоны и DOCX (F7)
   rerank.py     — кросс-энкодер над гибридом (F13); auth.py — пользователи, токены, роли (P5)
+  collab.py     — комментарии к файлам агента и журнал активности (F8)
   jobs.py       — задачи и расписание (P3): краулеры, load_docs с событиями, check_bank_editions,
                   embed, snapshot, eval_search, eval_agent, daily; журнал job_run
   api.py        — FastAPI: /units, /search, /resolve, /parameters, /terms, /interpretations,
@@ -195,6 +196,11 @@ python -m taxcorpus workspace deadlines --slug delo1             # сроки с
 # (viewer / editor / owner, TAXCORPUS_AUTH=on, токены Bearer tc_…, реестр config/users.json):
 python -m taxcorpus users add --email anna@firm.ru --name "Анна" && python -m taxcorpus users token --email anna@firm.ru
 python -m taxcorpus users grant --slug delo1 --email anna@firm.ru --role editor
+
+# совместная работа (F8): комментарии к файлам агента (comments.json дела: файл, версия, абзац-якорь,
+# ветки ответов) и журнал активности (activity.jsonl: user:<email> | agent, действие, цель);
+# агент читает открытые замечания list_comments перед перезаписью файла и отвечает reply_comment,
+# закрывает ветку юрист. API /workspaces/{slug}/comments, …/comments/{id}/resolve, …/activity; панель в UI.
 
 # шаблоны документов и DOCX (F7): templates/*.md (возражения на акт, апелляционная жалоба, ответ на
 # требование, меморандум) с плейсхолдерами {{facts.<роль>|запасное}}, {{manifest.client}}, {{deadlines.<ключ>}}

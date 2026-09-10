@@ -19,6 +19,7 @@ from .agent import FINAL_PROMPT, REWORK_PROMPT, SYSTEM_PROMPT, TaxAgent, _text_o
 from .citations import VerificationReport
 from .tools import TOOL_DEFINITIONS, execute_tool
 from .facts import FACT_TOOL_NAMES, FACT_TOOLS, FactStore
+from .collab import COLLAB_TOOL_NAMES, COLLAB_TOOLS, CollabStore
 from .templates import TEMPLATE_TOOL_NAMES, TEMPLATE_TOOLS, draft_from_template
 from .workspace import WORKSPACE_TOOL_NAMES, WORKSPACE_TOOLS, Workspace
 
@@ -31,6 +32,7 @@ WORKSPACE_RULES = """
 - Результат исследования сохраняй в research/<тема>.md через write_file в формате ответа (Вывод, Обоснование, Риски и оговорки, Что изменилось, Уверенность, Дата) плюс раздел «Факты дела» со ссылками на файлы. Черновики документов — в drafts/.
 - Файлы в inbox/ и notes/ не изменяй; выводы для протокола дописывай в notes/протокол.md через append_note.
 - Факты из документов фиксируй в таблице фактов (add_fact) с дословной цитатой из файла и ролью для дат процедуры (act_received, decision_received, decision_date …); сроки и давность считай derive_deadlines, а не вручную. В выводах опирайся на подтверждённые юристом факты (list_facts) или текст файлов; неподтверждённые — как гипотезы с оговоркой.
+- Перед перезаписью файла агента прочитай list_comments: учти открытые замечания юристов и ответь на каждое reply_comment (что изменено или почему не принято).
 - Документы (возражения, жалобы, ответы на требования, меморандум) начинай с draft_document по шаблону фирмы, затем заполняй секции агента и перезаписывай файл через write_file; экспорт в DOCX делает юрист кнопкой.
 - Задачи юристу (получить документ, уточнить у клиента) ставь через create_task.
 - В конце хода кратко скажи, что сделано, какие файлы созданы/обновлены и что ждёт юриста."""
@@ -134,7 +136,7 @@ class CaseSession:
         return text
 
     def tools(self) -> list[dict]:
-        return [*TOOL_DEFINITIONS, *WORKSPACE_TOOLS, *FACT_TOOLS, *TEMPLATE_TOOLS]
+        return [*TOOL_DEFINITIONS, *WORKSPACE_TOOLS, *FACT_TOOLS, *TEMPLATE_TOOLS, *COLLAB_TOOLS]
 
     def _run_workspace_tool(self, name: str, args: dict) -> tuple[str, bool]:
         try:
@@ -154,6 +156,9 @@ class CaseSession:
                 }
                 result = self.ws.write_file(args["path"], args["content"], header)
                 self.files_written.append(args["path"])
+                CollabStore(self.ws).log("agent", "write_file", args["path"],
+                                         {"version": result["version"], "session_id": self.session_id,
+                                          "verification_ok": report.ok})
                 result["verification"] = header["verification"]
                 if not report.ok:
                     result["note"] = ("файл записан, но в нём ссылки, не прошедшие проверку "
@@ -171,10 +176,20 @@ class CaseSession:
                                               args.get("quote"), args.get("page"), args.get("role"),
                                               extracted_by="agent")
                 result = {**fact.to_dict(), "note": "факт записан как неподтверждённый; юрист подтвердит в таблице фактов"}
+            elif name == "list_comments":
+                result = CollabStore(self.ws).threads(args["path"], open_only=True)
+                if not result:
+                    result = {"path": args["path"], "comments": [], "note": "открытых комментариев нет"}
+            elif name == "reply_comment":
+                result = CollabStore(self.ws).add_comment(
+                    CollabStore(self.ws).get(args["comment_id"])["path"], args["text"], "agent",
+                    parent_id=args["comment_id"])
             elif name == "draft_document":
                 result = draft_from_template(self.ws, args["template"], args["path"], args.get("values") or {},
                                              self.agent.calendar)
                 self.files_written.append(result["path"])
+                CollabStore(self.ws).log("agent", "draft_document", result["path"],
+                                         {"template": result["template"], "session_id": self.session_id})
             elif name == "derive_deadlines":
                 result = FactStore(self.ws).derive_deadlines(self.agent.calendar,
                                                              confirmed_only=bool(args.get("confirmed_only")))
@@ -252,7 +267,8 @@ class CaseSession:
                     continue
                 if self.redactor:  # аргументы модели содержат плейсхолдеры — вернуть реальные значения
                     args = json.loads(self._in(json.dumps(args, ensure_ascii=False)))
-                if block.name in WORKSPACE_TOOL_NAMES or block.name in FACT_TOOL_NAMES or block.name in TEMPLATE_TOOL_NAMES:
+                if (block.name in WORKSPACE_TOOL_NAMES or block.name in FACT_TOOL_NAMES
+                        or block.name in TEMPLATE_TOOL_NAMES or block.name in COLLAB_TOOL_NAMES):
                     output, is_error = self._run_workspace_tool(block.name, args)
                 else:
                     output, is_error = execute_tool(self.agent.corpus, block.name, args, as_of,
