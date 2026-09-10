@@ -1,0 +1,5 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/393 [00:00<?, ?it/s]Loading weights:  45%|████▌     | 178/393 [00:00<00:00, 1766.06it/s]Loading weights: 100%|██████████| 393/393 [00:00<00:00, 2534.65it/s]
+loaded in 133.1 s
+[9.8260832e-01 1.6395614e-05]
+2 pairs in 0.26 s

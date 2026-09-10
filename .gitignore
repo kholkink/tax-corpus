@@ -34,3 +34,5 @@ workspaces/*
 
 # профили провайдера с адресами (ключи — только через переменные окружения)
 config/providers.json
+backups/
+config/users.json

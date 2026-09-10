@@ -300,8 +300,20 @@ def cmd_embed(args: argparse.Namespace) -> int:
     for path in sorted(Path(args.data_dir).glob("*_units.jsonl")):
         records.extend(_read_jsonl(path))
     index = DenseIndex(args.model)
-    n = index.build(records, max_chars=args.max_chars)
-    print(f"чанков: {n}; модель: {args.model}; файл: {index.path}")
+    if args.to_db and not args.rebuild and index.load():
+        n = len(index.ids)
+        print(f"индекс загружен из {index.path}: чанков {n}")
+    else:
+        n = index.build(records, max_chars=args.max_chars)
+        print(f"чанков: {n}; модель: {args.model}; файл: {index.path}")
+    if args.to_db:
+        from .db import connect
+        from .embeddings import load_embeddings_db
+        conn = connect(args.db_url)
+        try:
+            print(f"в БД (pgvector): {load_embeddings_db(conn, index)} строк")
+        finally:
+            conn.close()
     return 0
 
 
@@ -724,6 +736,42 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0 if report.ok else 2
 
 
+def cmd_users(args: argparse.Namespace) -> int:
+    """Пользователи, токены и роли в делах (P5): add / list / token / tokens / revoke-token / grant / revoke / members."""
+    from .auth import AuthError, UserStore
+    store = UserStore(args.users_file)
+    try:
+        if args.users_cmd == "add":
+            u = store.add_user(args.email, args.name or args.email, admin=args.admin)
+            print(f"пользователь {u['email']} ({u['user_id']}){' admin' if u['admin'] else ''}")
+        elif args.users_cmd == "list":
+            for u in store.users():
+                print(f"{u['user_id']:14s} {u['email']:32s} {u['name']}{' [admin]' if u.get('admin') else ''}")
+        elif args.users_cmd == "token":
+            token = store.issue_token(args.email, args.label or "")
+            print("токен (показывается один раз, хранится sha256):", token)
+        elif args.users_cmd == "tokens":
+            for t in store.tokens(args.email):
+                print(f"{t['token_id']}  {t['user_id']}  {t.get('label') or ''}  создан {t['created_at']}  "
+                      f"{'ОТОЗВАН' if t['revoked'] else 'активен'}  последний вход {t.get('last_used_at') or '—'}")
+        elif args.users_cmd == "revoke-token":
+            print("отозван" if store.revoke_token(args.token_id) else "не найден")
+        elif args.users_cmd == "grant":
+            m = store.grant(args.slug, args.email, args.role)
+            print(f"{args.email}: {m['role']} в деле {args.slug}")
+        elif args.users_cmd == "revoke":
+            print("доступ снят" if store.revoke(args.slug, args.email) else "не был участником")
+        elif args.users_cmd == "members":
+            for m in store.members(args.slug):
+                print(f"{m['role']:7s} {m['email']}  {m['name']}")
+        else:
+            return 1
+    except AuthError as exc:
+        print(f"ошибка: {exc.detail}", file=sys.stderr)
+        return 2
+    return 0
+
+
 def cmd_jobs(args: argparse.Namespace) -> int:
     """Задачи и расписание (P3): list / run / history / cron."""
     from . import jobs as J
@@ -851,6 +899,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_embed.add_argument("--model", default="intfloat/multilingual-e5-small")
     p_embed.add_argument("--data-dir", default="data/processed")
     p_embed.add_argument("--max-chars", type=int, default=2000)
+    p_embed.add_argument("--to-db", action="store_true", help="загрузить векторы в unit_embedding (нужен pgvector)")
+    p_embed.add_argument("--rebuild", action="store_true", help="пересчитать даже если npz уже есть")
+    p_embed.add_argument("--db-url", default=None)
     p_embed.set_defaults(func=cmd_embed)
 
     p_diff = sub.add_parser("diff", help="история правок единицы за период")
@@ -998,6 +1049,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_audit.add_argument("--data-dir", default="data/processed")
     p_audit.add_argument("--db-url", default=None)
     p_audit.set_defaults(func=cmd_audit)
+
+    p_users = sub.add_parser("users", help="пользователи, токены, роли в делах (P5)")
+    p_users.add_argument("--users-file", default=None, help="config/users.json по умолчанию")
+    u_sub = p_users.add_subparsers(dest="users_cmd", required=True)
+    u_add = u_sub.add_parser("add"); u_add.add_argument("--email", required=True); u_add.add_argument("--name", default=None)
+    u_add.add_argument("--admin", action="store_true")
+    u_sub.add_parser("list")
+    u_tok = u_sub.add_parser("token", help="выпустить токен"); u_tok.add_argument("--email", required=True); u_tok.add_argument("--label", default=None)
+    u_toks = u_sub.add_parser("tokens"); u_toks.add_argument("--email", default=None)
+    u_rt = u_sub.add_parser("revoke-token"); u_rt.add_argument("--token-id", required=True)
+    u_gr = u_sub.add_parser("grant", help="роль в деле"); u_gr.add_argument("--slug", required=True); u_gr.add_argument("--email", required=True)
+    u_gr.add_argument("--role", default="editor", choices=["viewer", "editor", "owner"])
+    u_rv = u_sub.add_parser("revoke"); u_rv.add_argument("--slug", required=True); u_rv.add_argument("--email", required=True)
+    u_mb = u_sub.add_parser("members"); u_mb.add_argument("--slug", required=True)
+    p_users.set_defaults(func=cmd_users)
 
     p_jobs = sub.add_parser("jobs", help="задачи и расписание: list / run / history / cron (P3)")
     jobs_sub = p_jobs.add_subparsers(dest="jobs_cmd", required=True)

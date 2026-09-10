@@ -18,8 +18,8 @@ from datetime import date
 from functools import lru_cache
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse, Response
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from .deadlines import ProductionCalendar, compute_deadline
@@ -28,6 +28,52 @@ from .tools import DbCorpus, LocalCorpus
 app = FastAPI(title="tax-corpus", version="0.1.0",
               description="Корпус налогового права РФ: нормы на дату, ссылки, параметры, "
                           "разъяснения, сроки, агент с проверкой цитат")
+
+
+PUBLIC_PATHS = ("/", "/health", "/docs", "/openapi.json", "/redoc", "/accuracy")
+
+
+def user_store():
+    """Реестр пользователей (P5); читается на каждый запрос — файл мал, а токены могут меняться."""
+    from .auth import UserStore
+    return UserStore()
+
+
+@app.middleware("http")
+async def authorize(request: Request, call_next):
+    """P5: токен -> принципал; для /workspaces/{slug}… — проверка роли по методу.
+    В открытом режиме (TAXCORPUS_AUTH не задан) принципал — локальный юрист со всеми правами."""
+    from . import auth as _auth
+    path = request.url.path
+    if not _auth.enabled():
+        request.state.principal = _auth.LOCAL
+        request.state.store = None
+        return await call_next(request)
+    if path in PUBLIC_PATHS or path.startswith("/docs"):
+        request.state.principal = None
+        request.state.store = None
+        return await call_next(request)
+    store = user_store()
+    header = request.headers.get("authorization") or ""
+    token = header[7:] if header.lower().startswith("bearer ") else request.headers.get("x-api-key")
+    try:
+        principal = store.authenticate(token)
+        parts = path.split("/")
+        if len(parts) >= 3 and parts[1] == "workspaces" and parts[2]:
+            _auth.require(store, parts[2], principal, _auth.required_role(request.method, path))
+    except _auth.AuthError as exc:
+        return JSONResponse({"detail": exc.detail}, status_code=exc.status)
+    request.state.principal = principal
+    request.state.store = store
+    return await call_next(request)
+
+
+@app.get("/me")
+def me(request: Request) -> dict:
+    from . import auth as _auth
+    p = request.state.principal
+    return {"auth": _auth.enabled(), **(p.to_dict() if p else {}),
+            "workspaces": (sorted(request.state.store.slugs_for(p)) if request.state.store and p and not p.admin else "all")}
 
 
 @lru_cache(maxsize=1)
@@ -271,12 +317,18 @@ class WorkspaceCreate(BaseModel):
 
 
 @app.get("/workspaces")
-def list_workspaces() -> list[dict]:
-    return Workspace.list_all(WORKSPACES_ROOT)
+def list_workspaces(request: Request) -> list[dict]:
+    items = Workspace.list_all(WORKSPACES_ROOT)
+    store, p = request.state.store, request.state.principal
+    if store is not None and p is not None:
+        allowed = store.slugs_for(p)
+        if allowed is not None:
+            items = [m for m in items if m["slug"] in allowed]
+    return items
 
 
 @app.post("/workspaces", status_code=201)
-def create_workspace(req: WorkspaceCreate) -> dict:
+def create_workspace(req: WorkspaceCreate, request: Request) -> dict:
     try:
         ws = Workspace.create(req.slug, req.title, client=req.client,
                               as_of=req.as_of.isoformat() if req.as_of else None,
@@ -284,7 +336,57 @@ def create_workspace(req: WorkspaceCreate) -> dict:
                               confidentiality=req.confidentiality, provider=req.provider)
     except (ValueError, FileExistsError) as exc:
         raise HTTPException(400, str(exc)) from exc
+    store, p = request.state.store, request.state.principal
+    if store is not None and p is not None and not p.local:
+        store.grant(req.slug, p.email, "owner")          # создатель — владелец дела
+        _sync_users(store)
     return ws.manifest.to_dict()
+
+
+class MemberGrant(BaseModel):
+    email: str
+    role: str = Field("editor", pattern="^(viewer|editor|owner)$")
+
+
+@app.get("/workspaces/{slug}/members")
+def list_members(slug: str, request: Request) -> list[dict]:
+    _ws(slug)
+    store = request.state.store or user_store()
+    return store.members(slug)
+
+
+@app.post("/workspaces/{slug}/members", status_code=201)
+def grant_member(slug: str, req: MemberGrant, request: Request) -> dict:
+    from .auth import AuthError
+    _ws(slug)
+    store = request.state.store or user_store()
+    try:
+        m = store.grant(slug, req.email, req.role)
+    except AuthError as exc:
+        raise HTTPException(exc.status, exc.detail) from exc
+    _sync_users(store)
+    return m
+
+
+@app.delete("/workspaces/{slug}/members/{email}")
+def revoke_member(slug: str, email: str, request: Request) -> dict:
+    _ws(slug)
+    store = request.state.store or user_store()
+    ok = store.revoke(slug, email)
+    _sync_users(store)
+    return {"revoked": ok}
+
+
+def _sync_users(store) -> None:
+    conn = getattr(corpus(), "conn", None)
+    if conn is None:
+        return
+    try:
+        from .workspace_store import sync_users
+        sync_users(conn, store)
+    except Exception as exc:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).warning("users sync failed: %s", exc)
 
 
 @app.get("/workspaces/{slug}")

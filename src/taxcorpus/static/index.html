@@ -160,7 +160,9 @@
 </dialog>
 
 <script>
-const api = (path, opts={}) => fetch(path, {headers:{'Content-Type':'application/json'}, ...opts}).then(async r => {
+let TOKEN = ''; try { TOKEN = localStorage.getItem('tc_token') || ''; } catch (e) {}
+const api = (path, opts={}) => fetch(path, {...opts, headers:{'Content-Type':'application/json', ...(TOKEN ? {'Authorization': 'Bearer ' + TOKEN} : {}), ...(opts.headers||{})}}).then(async r => {
+  if (r.status === 401) { const t = prompt('Нужен токен доступа (python -m taxcorpus users token):', TOKEN); if (t !== null) { TOKEN = t.trim(); try { localStorage.setItem('tc_token', TOKEN); } catch (e) {} return api(path, opts); } }
   if (!r.ok) throw new Error((await r.json().catch(()=>({detail:r.statusText}))).detail || r.statusText);
   return r.json();
 });
@@ -371,6 +373,7 @@ $('audit-run').onclick = async () => {
   } catch (e) { $('audit-summary').textContent = 'Ошибка: ' + e.message; }
 };
 api('/health').then(h => $('backend').textContent = 'бэкенд: ' + h.backend + (h.provider && h.provider.badge ? ' · ' + h.provider.badge : '')).catch(()=>{});
+api('/me').then(m => { if (m.auth) $('backend').textContent += ` · ${m.name || m.email}${m.admin ? ' (admin)' : ''}`; }).catch(()=>{});
 loadWorkspaces();
 </script>
 </body>
