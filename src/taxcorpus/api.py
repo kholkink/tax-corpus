@@ -19,7 +19,7 @@ from functools import lru_cache
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field
 
 from .deadlines import ProductionCalendar, compute_deadline
@@ -320,14 +320,46 @@ def upload_file(slug: str, req: FileUpload) -> dict:
 
 
 @app.get("/workspaces/{slug}/files/{path:path}")
-def read_workspace_file(slug: str, path: str, offset: int = 0, max_chars: int = 20000) -> dict:
+def read_workspace_file(slug: str, path: str, offset: int = 0, max_chars: int = 20000, format: str = "json"):
     ws = _ws(slug)
     try:
+        if format == "docx":
+            from urllib.parse import quote
+            from .export import export_workspace_file
+            data = export_workspace_file(ws, path)
+            name = Path(path).stem + ".docx"
+            return Response(data, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})
         return ws.read_file(path, offset, max_chars)
     except FileNotFoundError as exc:
         raise HTTPException(404, f"нет файла {path}") from exc
     except (PermissionError, RuntimeError) as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+# --- шаблоны документов (F7) --------------------------------------------------------------
+@app.get("/templates")
+def templates() -> list[dict]:
+    from .templates import list_templates
+    return [t.summary() for t in list_templates()]
+
+
+class DraftCreate(BaseModel):
+    template: str
+    path: str
+    values: dict[str, str] = Field(default_factory=dict)
+
+
+@app.post("/workspaces/{slug}/drafts", status_code=201)
+def create_draft(slug: str, req: DraftCreate) -> dict:
+    from .templates import draft_from_template
+    ws = _ws(slug)
+    try:
+        result = draft_from_template(ws, req.template, req.path, req.values, ProductionCalendar.load())
+    except FileNotFoundError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    _sync(ws)
+    return result
 
 
 @app.get("/workspaces/{slug}/search")

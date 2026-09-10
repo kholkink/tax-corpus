@@ -90,6 +90,12 @@
     <div id="files"></div>
     <h2>Просмотр</h2>
     <pre class="viewer" id="viewer">—</pre>
+    <h2>Черновик по шаблону</h2>
+    <form id="draft-new" style="display:grid; grid-template-columns: 1fr 1fr auto; gap:4px">
+      <select name="template" id="draft-template"></select>
+      <input name="path" placeholder="имя файла в drafts/" required>
+      <button>Создать</button>
+    </form>
     <h2>Нормы</h2>
     <input id="norm-q" placeholder="поиск по кодексу или ссылка «п. 2 ст. 88» — Enter" style="width:100%">
     <div id="norm-results"></div>
@@ -177,7 +183,7 @@ async function openWorkspace(slug) {
   loadWorkspaces();
 }
 function renderFiles(files) {
-  $('files').innerHTML = files.map(f => `<div class="file" data-path="${esc(f.path)}"><span>${esc(f.path)}</span><span class="own">${f.owner==='agent'?'агент':'юрист'}</span></div>`).join('') || '<div class="status">пусто — загрузите документы</div>';
+  $('files').innerHTML = files.map(f => `<div class="file" data-path="${esc(f.path)}"><span>${esc(f.path)}</span><span class="own">${f.owner==='agent'?'агент':'юрист'}${f.owner==='agent' && f.path.endsWith('.md') ? ` <a href="/workspaces/${state.slug}/files/${encodeURIComponent(f.path).replace(/%2F/g,'/')}?format=docx" title="экспорт в DOCX" onclick="event.stopPropagation()">DOCX</a>` : ''}</span></div>`).join('') || '<div class="status">пусто — загрузите документы</div>';
   document.querySelectorAll('.file').forEach(el => el.onclick = async () => {
     const r = await api(`/workspaces/${state.slug}/files/${encodeURIComponent(el.dataset.path).replace(/%2F/g,'/')}`);
     $('viewer').textContent = r.text + (r.truncated ? '\n\n… (показаны первые символы, всего ' + r.chars + ')' : '');
@@ -254,6 +260,15 @@ async function showCard(unitId) {
   $('card-params').innerHTML = c.parameters.length ? '<table class="facts"><tr><th>параметр</th><th>значение</th><th>с</th><th>по</th><th>якорь</th></tr>' + c.parameters.map(p => `<tr><td>${esc(p.title||p.name)}</td><td>${p.value} ${esc(p.unit)}</td><td>${p.valid_from||'?'}</td><td>${p.valid_to||'—'}</td><td class="status">${esc(p.anchor)}</td></tr>`).join('') + '</table>' : '<div class="status">параметров (ставок, сроков), заякоренных в этой норме, нет</div>';
   cardTab('text'); $('unit-dialog').showModal();
 }
+api('/templates').then(ts => $('draft-template').innerHTML = ts.map(t => `<option value="${esc(t.name)}" title="${esc(t.description)}">${esc(t.title)}</option>`).join('')).catch(()=>{});
+$('draft-new').onsubmit = async e => {
+  e.preventDefault(); if (!state.slug) return alert('выберите дело'); const f = new FormData(e.target);
+  try {
+    const r = await api(`/workspaces/${state.slug}/drafts`, {method:'POST', body: JSON.stringify({template: f.get('template'), path: f.get('path'), values: {}})});
+    const w = await api(`/workspaces/${state.slug}`); renderFiles(w.files);
+    $('composer').value = `Заполни секции агента в ${r.path} (шаблон ${r.template}); пропуски: ${(r.missing||[]).join(', ') || 'нет'}. Перезапиши файл через write_file.`;
+  } catch (err) { alert(err.message); }
+};
 $('norm-q').addEventListener('keydown', async e => {
   if (e.key !== 'Enter') return;
   const q = $('norm-q').value.trim(); if (!q) return;

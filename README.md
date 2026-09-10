@@ -183,6 +183,14 @@ python -m taxcorpus workspace confirm-fact --slug delo1 --id 2
 python -m taxcorpus workspace timeline --slug delo1
 python -m taxcorpus workspace deadlines --slug delo1             # сроки со ссылками на нормы -> задачи
 
+# шаблоны документов и DOCX (F7): templates/*.md (возражения на акт, апелляционная жалоба, ответ на
+# требование, меморандум) с плейсхолдерами {{facts.<роль>|запасное}}, {{manifest.client}}, {{deadlines.<ключ>}}
+# и секциями <!-- agent: … -->; инструмент агента draft_document; экспорт md -> DOCX (python-docx,
+# провенанс — в свойствах и на последней странице; --reference docx со стилями фирмы):
+python -m taxcorpus workspace draft --slug delo1 --template возражения-на-акт --path возражения --set "authority=ИФНС № 1"
+python -m taxcorpus workspace export --slug delo1 --path drafts/возражения.md --out возражения.docx
+# в API: GET /templates, POST /workspaces/{slug}/drafts, GET /workspaces/{slug}/files/{path}?format=docx
+
 # карта позиций по норме (F4): позиции писем/пленумов/обзоров по каждой норме извлекает модель
 # (stance pro_taxpayer | pro_authority | neutral + дословная цитата, проверяемая по тексту документа;
 # без точной цитаты позиция отклоняется), реестр — data/interpretations/positions.jsonl, зеркало — таблица

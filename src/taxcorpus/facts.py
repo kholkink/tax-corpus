@@ -20,9 +20,12 @@ from pathlib import Path
 from .workspace import Workspace
 
 KINDS = ("date", "amount", "party", "event", "period", "regime", "other")
-ROLES = ("act_received", "decision_received", "decision_date", "complaint_decision_date",
-         "tax_due", "tax_paid", "offense", "period_end", "declaration_due", "declaration_filed",
-         "check_started", "check_ended")
+DATE_ROLES = ("act_received", "act_date", "decision_received", "decision_date", "complaint_decision_date",
+              "tax_due", "tax_paid", "offense", "period_end", "declaration_due", "declaration_filed",
+              "check_started", "check_ended", "requirement_date", "requirement_received")
+TEXT_ROLES = ("act_number", "decision_number", "requirement_number", "inn", "kpp", "ogrn", "authority",
+              "superior_authority", "signer", "amount_arrears", "amount_penalty", "amount_fine")
+ROLES = (*DATE_ROLES, *TEXT_ROLES)
 MONTHS = {"января": 1, "февраля": 2, "марта": 3, "апреля": 4, "мая": 5, "июня": 6, "июля": 7,
           "августа": 8, "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12}
 RE_DATE_DOT = re.compile(r"(?<!\d)(\d{1,2})[./](\d{1,2})[./](\d{4}|\d{2})(?!\d)")
@@ -165,9 +168,8 @@ class FactStore:
         """Факт агента обязан иметь источник и дословную цитату; факт юриста — нет (он и есть источник)."""
         if role is not None and role not in ROLES:
             raise FactError(f"роль должна быть одной из {', '.join(ROLES)} или null")
-        if role is not None and kind not in ("date", "event", "period"):
-            raise FactError("роль задаётся только фактам-датам (kind date | event | period); "
-                            "для суммы или стороны укажите role = null")
+        if role in DATE_ROLES and kind not in ("date", "event", "period"):
+            raise FactError(f"роль {role} задаётся только фактам-датам (kind date | event | period)")
         if extracted_by == "agent":
             if not source_path or not quote:
                 raise FactError("факт агента должен ссылаться на файл дела (source_path) и дословную цитату (quote)")
@@ -218,7 +220,7 @@ class FactStore:
     def by_role(self, confirmed_only: bool = False) -> dict[str, Fact]:
         out: dict[str, Fact] = {}
         for f in self.facts:
-            if f.role and f.kind in ("date", "event", "period") and (f.confirmed or not confirmed_only) \
+            if f.role in DATE_ROLES and f.kind in ("date", "event", "period") and (f.confirmed or not confirmed_only) \
                     and f.role not in out:
                 out[f.role] = f
         return out
@@ -290,8 +292,10 @@ FACT_TOOLS: list[dict] = [
                     "role связывает факт со сроками: act_received (получен акт проверки), decision_received "
                     "(вручено решение), decision_date (вынесено решение), complaint_decision_date, tax_due, "
                     "tax_paid, offense, period_end, declaration_due, declaration_filed, check_started, "
-                    "check_ended — только для дат/событий/периодов; иначе null. Факт остаётся "
-                    "неподтверждённым до проверки юристом.",
+                    "check_ended, act_date, requirement_date, requirement_received — только для дат/событий/"
+                    "периодов; реквизиты: act_number, decision_number, requirement_number, inn, authority, "
+                    "signer, amount_arrears/amount_penalty/amount_fine; иначе null. Роли подставляются в шаблоны "
+                    "документов (draft_document). Факт остаётся неподтверждённым до проверки юристом.",
      "input_schema": {"type": "object",
                       "properties": {"kind": {"type": "string", "enum": list(KINDS)},
                                      "value": {"type": "string"},

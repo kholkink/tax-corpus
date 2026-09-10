@@ -547,6 +547,21 @@ def cmd_workspace(args: argparse.Namespace) -> int:
         return 0
     if args.ws_cmd in ("facts", "add-fact", "confirm-fact", "timeline", "deadlines"):
         return _facts(args, ws)
+    if args.ws_cmd == "draft":
+        from .deadlines import ProductionCalendar
+        from .templates import draft_from_template
+        values = dict(kv.split("=", 1) for kv in (args.set or []))
+        r = draft_from_template(ws, args.template, args.path, values, ProductionCalendar.load())
+        print(f"черновик {r['path']} (v{r['version']}): заполнено {len(r['filled'])}, пропуски: "
+              f"{', '.join(r['missing']) or 'нет'}; секций для агента: {len(r['agent_sections'])}")
+        return 0
+    if args.ws_cmd == "export":
+        from .export import export_workspace_file
+        data = export_workspace_file(ws, args.path, args.reference)
+        out = Path(args.out or (Path(args.path).stem + ".docx"))
+        out.write_bytes(data)
+        print(f"DOCX: {out} ({len(data)} байт)")
+        return 0
     from .case_session import CaseSession
     if args.ws_cmd == "sessions":
         for s in CaseSession.list_sessions(ws):
@@ -950,6 +965,16 @@ def build_parser() -> argparse.ArgumentParser:
     w_dl.add_argument("--confirmed-only", action="store_true")
     w_dl.add_argument("--no-tasks", action="store_true")
     w_dl.add_argument("--json", action="store_true")
+    w_draft = ws_sub.add_parser("draft", help="черновик документа по шаблону (F7)")
+    w_draft.add_argument("--slug", required=True)
+    w_draft.add_argument("--template", required=True, help="имя из templates/*.md")
+    w_draft.add_argument("--path", required=True, help="имя файла в drafts/")
+    w_draft.add_argument("--set", action="append", help="значение плейсхолдера: authority=ИФНС № 1")
+    w_export = ws_sub.add_parser("export", help="файл агента -> DOCX (F7)")
+    w_export.add_argument("--slug", required=True)
+    w_export.add_argument("--path", required=True)
+    w_export.add_argument("--out", default=None)
+    w_export.add_argument("--reference", default=None, help="docx со стилями фирмы")
     w_sess = ws_sub.add_parser("sessions", help="сессии дела")
     w_sess.add_argument("--slug", required=True)
     w_chat = ws_sub.add_parser("chat", help="диалог с агентом в деле (REPL или --message)")
