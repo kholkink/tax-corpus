@@ -185,7 +185,7 @@ def parse_document(page: str, doc_id: str, url: str, delay: float = 2.0) -> dict
     }
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--categories", default=",".join(CATEGORIES))
     ap.add_argument("--pages", type=int, default=None, help="страниц на категорию (по умолчанию все)")
@@ -193,7 +193,7 @@ def main() -> int:
     ap.add_argument("--delay", type=float, default=2.0)
     ap.add_argument("--out", default=str(ROOT / "data" / "interpretations" / "minfin_letters.jsonl"))
     ap.add_argument("--raw-dir", default=str(ROOT / "data" / "raw" / "minfin"))
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     out, raw_dir = Path(args.out), Path(args.raw_dir)
     raw_dir.mkdir(parents=True, exist_ok=True)

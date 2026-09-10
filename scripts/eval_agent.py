@@ -60,7 +60,7 @@ def rescore(args) -> int:
     return 0
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--local", action="store_true")
     ap.add_argument("--as-of", default=GOLDEN.get("as_of") or date.today().isoformat())
@@ -71,7 +71,7 @@ def main() -> int:
     ap.add_argument("--no-resume", action="store_true", help="не пропускать уже оценённые вопросы")
     ap.add_argument("--rescore", action="store_true",
                     help="только пересчитать метрики по reports/eval_agent_runs.jsonl (без модели)")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     if args.rescore:
         return rescore(args)
 

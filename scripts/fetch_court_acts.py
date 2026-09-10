@@ -67,7 +67,7 @@ def extract_text(page: str) -> str | None:
     return "\n\n".join(body) if len(body) > 3 else None
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     out = ROOT / "data" / "interpretations" / "court_acts.jsonl"
     raw_dir = ROOT / "data" / "raw" / "courts"
     raw_dir.mkdir(parents=True, exist_ok=True)

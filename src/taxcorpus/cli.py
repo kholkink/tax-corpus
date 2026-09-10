@@ -634,6 +634,35 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0 if report.ok else 2
 
 
+def cmd_jobs(args: argparse.Namespace) -> int:
+    """Задачи и расписание (P3): list / run / history / cron."""
+    from . import jobs as J
+
+    if args.jobs_cmd == "list":
+        for name, (desc, _) in sorted(J.JOBS.items()):
+            print(f"{name:20s} {desc}")
+        return 0
+    if args.jobs_cmd == "cron":
+        print(J.CRONTAB.format(root=J.ROOT, python=sys.executable))
+        return 0
+    if args.jobs_cmd == "history":
+        from .db import connect
+        conn = connect(args.db_url)
+        try:
+            for r in J.history(conn, args.name, args.limit):
+                print(f"#{r['run_id']:<5} {r['name']:20s} {r['status']:7s} {r['started_at']:%Y-%m-%d %H:%M} "
+                      f"{(r['error'] or '')[:80]}")
+        finally:
+            conn.close()
+        return 0
+    result = J.run_job(args.name, args.job_args)
+    print(f"[{result['status']}] {result['name']} за {result['seconds']} с; "
+          f"stats: {json.dumps(result['stats'], ensure_ascii=False, default=str)[:400]}")
+    if result["error"]:
+        print(result["error"], file=sys.stderr)
+    return 0 if result["status"] == "ok" else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="taxcorpus", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -811,11 +840,26 @@ def build_parser() -> argparse.ArgumentParser:
     p_audit.add_argument("--db-url", default=None)
     p_audit.set_defaults(func=cmd_audit)
 
+    p_jobs = sub.add_parser("jobs", help="задачи и расписание: list / run / history / cron (P3)")
+    jobs_sub = p_jobs.add_subparsers(dest="jobs_cmd", required=True)
+    jobs_sub.add_parser("list")
+    jobs_sub.add_parser("cron")
+    j_hist = jobs_sub.add_parser("history")
+    j_hist.add_argument("--name", default=None)
+    j_hist.add_argument("--limit", type=int, default=20)
+    j_hist.add_argument("--db-url", default=None)
+    j_run = jobs_sub.add_parser("run")
+    j_run.add_argument("name")
+    j_run.add_argument("job_args", nargs=argparse.REMAINDER, help="аргументы задачи после --")
+    p_jobs.set_defaults(func=cmd_jobs)
+
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if getattr(args, "job_args", None) and args.job_args[:1] == ["--"]:
+        args.job_args = args.job_args[1:]
     return args.func(args)
 
 

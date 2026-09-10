@@ -142,7 +142,7 @@ def parse_letter(page: str, meta: dict) -> dict | None:
     }
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--pages", type=int, default=1, help="последняя страница списка (по 15 писем)")
     ap.add_argument("--start-page", type=int, default=1, help="с какой страницы списка начать")
@@ -151,7 +151,7 @@ def main() -> int:
     ap.add_argument("--out", default=str(ROOT / "data" / "interpretations" / "fns_mandatory.jsonl"))
     ap.add_argument("--raw-dir", default=str(ROOT / "data" / "raw" / "fns"))
     ap.add_argument("--no-resume", action="store_true")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     out = Path(args.out)
     raw_dir = Path(args.raw_dir)
