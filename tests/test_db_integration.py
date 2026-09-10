@@ -4,6 +4,9 @@ import os
 
 import pytest
 
+from taxcorpus import load_dotenv  # noqa: E402
+
+load_dotenv()  # TAXCORPUS_DB из .env
 DB_URL = os.environ.get("TAXCORPUS_DB", "postgresql://postgres@127.0.0.1:5432/taxcorpus")
 
 psycopg = pytest.importorskip("psycopg")
