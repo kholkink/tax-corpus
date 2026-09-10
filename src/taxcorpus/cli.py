@@ -548,6 +548,12 @@ def _chat(args: argparse.Namespace, ws) -> int:
 
     corpus, conn = _open_corpus(args)
     try:
+        if conn is not None:
+            from .db import latest_snapshot
+            snap = latest_snapshot(conn)
+            if snap and ws.manifest.corpus_snapshot != snap:
+                ws.manifest.corpus_snapshot = snap  # номер снимка корпуса попадает в шапки файлов агента
+                ws.save_manifest()
         agent = _make_agent(args, corpus)
         session = CaseSession.load(ws, agent, args.session) if args.session else CaseSession(ws, agent)
         print(f"дело «{ws.manifest.title}», сессия {session.session_id}, модель {agent.model}, "

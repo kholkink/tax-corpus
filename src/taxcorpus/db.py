@@ -565,3 +565,8 @@ def create_snapshot(conn, description: str | None = None, git_commit: str | None
     ).fetchone()
     conn.commit()
     return {"snapshot_id": row["snapshot_id"], "created_at": row["created_at"], **content}
+
+
+def latest_snapshot(conn) -> int | None:
+    row = conn.execute("SELECT max(snapshot_id) AS id FROM snapshot").fetchone()
+    return row["id"] if row else None
