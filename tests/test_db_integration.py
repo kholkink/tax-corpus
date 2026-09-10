@@ -158,3 +158,45 @@ def test_positions_roundtrip_in_db():
             assert positions_by_docs(conn, [doc["doc_id"]])[doc["doc_id"]][doc["to_unit_id"]] == "neutral"
         finally:
             load_positions_db(conn, existing)
+
+
+def test_apply_law_to_db_creates_versions_and_rolls_back():
+    """Синтетический закон применяется к живой БД внутри транзакции и откатывается."""
+    from taxcorpus.db import diff_versions, unit_text_at
+    from taxcorpus.patcher import apply_law_to_db
+
+    law = ('Внести в часть первую Налогового кодекса Российской Федерации следующие изменения:\n'
+           '1) в абзаце первом пункта 2 статьи 88 слова "трех месяцев" заменить словами "четырех месяцев";\n'
+           '2) статью 88 дополнить пунктом 2.7 следующего содержания:\n"2.7. Тестовый пункт.";\n'
+           '3) пункт 9 статьи 999 признать утратившим силу.\n'
+           'Статья 2\nНастоящий Федеральный закон вступает в силу с 1 января 2030 года.\n')
+
+    class Rollback(Exception):
+        pass
+
+    with psycopg.connect(DB_URL, row_factory=psycopg.rows.dict_row, connect_timeout=3) as conn:
+        try:
+            with conn.transaction():
+                dry = apply_law_to_db(conn, "nk1", law, "0-ФЗ", "2026-09-01", dry_run=True)
+                assert dry["status"] == "dry_run" and dry["effective_date"] == "2030-01-01" and dry["ok"] == 2
+                assert dry["failed"] and "не найдена" in dry["failed"][0]["reason"]
+                r = apply_law_to_db(conn, "nk1", law, "0-ФЗ", "2026-09-01")
+                assert r["status"] == "auto" and r["applied"] == 2
+                before = unit_text_at(conn, "nk1.ch14.art88.p2", "2029-12-31")
+                after = unit_text_at(conn, "nk1.ch14.art88.p2", "2030-01-01")
+                assert "трех месяцев" in before["text"] and "четырех месяцев" in after["text"]
+                assert before["valid_to"].isoformat() == "2030-01-01" and after["valid_from"].isoformat() == "2030-01-01"
+                assert unit_text_at(conn, "nk1.ch14.art88.p2-7", "2030-06-01")["text"] == "2.7. Тестовый пункт."
+                assert unit_text_at(conn, "nk1.ch14.art88.p2-7", "2029-06-01") is None
+                art = unit_text_at(conn, "nk1.ch14.art88", "2030-06-01")
+                assert "Тестовый пункт" in art["full_text"] and "четырех месяцев" in art["full_text"]
+                d = diff_versions(conn, "nk1.ch14.art88.p2", "2029-12-31", "2030-01-01")
+                assert not d["same"] and "-" in d["diff"] and "четырех" in d["diff"]
+                q = conn.execute("SELECT applied_status, count(*) AS n FROM patch WHERE act_code = 'nk1' AND "
+                                 "amending_act_id = (SELECT amending_act_id FROM amending_act WHERE number = '0-ФЗ') GROUP BY 1").fetchall()
+                assert {r["applied_status"]: r["n"] for r in q} == {"auto": 2, "failed": 1}
+                raise Rollback
+        except Rollback:
+            pass
+    with _conn() as conn:
+        assert unit_text_at(conn, "nk1.ch14.art88.p2-7", "2030-06-01") is None      # откат сработал

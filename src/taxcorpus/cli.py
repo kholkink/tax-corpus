@@ -767,6 +767,35 @@ def cmd_audit(args: argparse.Namespace) -> int:
     return 0 if report.ok else 2
 
 
+def cmd_patch(args: argparse.Namespace) -> int:
+    """Изменяющий закон -> патчи -> новые версии unit_text (F3); --dry-run — только разбор и проверка."""
+    from .db import connect
+    from .patcher import apply_law_to_db
+
+    text = Path(args.law).read_text(encoding="utf-8")
+    conn = connect(args.db_url)
+    try:
+        if args.queue:
+            rows = conn.execute("SELECT p.patch_id, a.number, p.operation, p.target_unit_id, p.applied_status, p.reason, p.effective_date "
+                                "FROM patch p LEFT JOIN amending_act a ON a.amending_act_id = p.amending_act_id "
+                                "WHERE p.applied_status = 'failed' ORDER BY p.patch_id DESC LIMIT 100").fetchall()
+            for r in rows:
+                print(f"#{r['patch_id']:<5} {r['number'] or '?':10s} {r['operation']:16s} {r['target_unit_id'] or '—':28s} {r['reason']}")
+            print(f"в очереди сверки: {len(rows)}")
+            return 0
+        r = apply_law_to_db(conn, args.act, text, args.number, args.date, args.effective, args.published,
+                            dry_run=args.dry_run, source_url=args.source)
+    finally:
+        conn.close()
+    print(f"закон {r['number']}: инструкций {r['instructions']}, применимо {r['ok']}, дата вступления "
+          f"{r['effective_date'] or '—'} ({r['effective_note']}); статус {r['status']}, записано версий {r['applied']}")
+    for x in r["results"]:
+        print(f"  {x['status']:7s} {x['operation']:16s} {x['unit_id'] or '—'}" + (f"  {x['reason']}" if x.get("reason") else ""))
+        if args.verbose and x.get("diff"):
+            print("    " + x["diff"].replace("\n", "\n    ")[:1500])
+    return 0 if not r["failed"] else 3
+
+
 def cmd_users(args: argparse.Namespace) -> int:
     """Пользователи, токены и роли в делах (P5): add / list / token / tokens / revoke-token / grant / revoke / members."""
     from .auth import AuthError, UserStore
@@ -1090,6 +1119,20 @@ def build_parser() -> argparse.ArgumentParser:
     p_audit.add_argument("--data-dir", default="data/processed")
     p_audit.add_argument("--db-url", default=None)
     p_audit.set_defaults(func=cmd_audit)
+
+    p_patch = sub.add_parser("patch", help="изменяющий закон -> версии норм с даты вступления (F3)")
+    p_patch.add_argument("--act", default="nk1", help="nk1 | nk2")
+    p_patch.add_argument("--law", required=True, help="текстовый файл закона")
+    p_patch.add_argument("--number", default="?", help="«281-ФЗ»")
+    p_patch.add_argument("--date", default=None, help="дата принятия YYYY-MM-DD")
+    p_patch.add_argument("--published", default=None, help="дата опубликования (для отсчёта вступления)")
+    p_patch.add_argument("--effective", default=None, help="дата вступления в силу, если известна")
+    p_patch.add_argument("--source", default=None)
+    p_patch.add_argument("--dry-run", action="store_true")
+    p_patch.add_argument("--queue", action="store_true", help="показать очередь сверки (failed)")
+    p_patch.add_argument("--verbose", action="store_true")
+    p_patch.add_argument("--db-url", default=None)
+    p_patch.set_defaults(func=cmd_patch)
 
     p_users = sub.add_parser("users", help="пользователи, токены, роли в делах (P5)")
     p_users.add_argument("--users-file", default=None, help="config/users.json по умолчанию")

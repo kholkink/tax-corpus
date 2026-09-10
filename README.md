@@ -43,6 +43,7 @@ src/taxcorpus/
   rerank.py     — кросс-энкодер над гибридом (F13); auth.py — пользователи, токены, роли (P5)
   collab.py     — комментарии к файлам агента и журнал активности (F8)
   monitor.py    — события корпуса -> подписки дел -> уведомления -> обновление ресёрча (F2)
+  patcher.py    — грамматика изменяющих законов, применитель, round-trip, версии в БД (F3)
   jobs.py       — задачи и расписание (P3): краулеры, load_docs с событиями, check_bank_editions,
                   embed, snapshot, eval_search, eval_agent, daily; журнал job_run
   api.py        — FastAPI: /units, /search, /resolve, /parameters, /terms, /interpretations,
@@ -197,6 +198,19 @@ python -m taxcorpus workspace deadlines --slug delo1             # сроки с
 # (viewer / editor / owner, TAXCORPUS_AUTH=on, токены Bearer tc_…, реестр config/users.json):
 python -m taxcorpus users add --email anna@firm.ru --name "Анна" && python -m taxcorpus users token --email anna@firm.ru
 python -m taxcorpus users grant --slug delo1 --email anna@firm.ru --role editor
+
+# история редакций (F3): patcher.py разбирает изменяющие законы (заменить слова / после слов дополнить /
+# исключить / изложить в редакции / дополнить пунктом-подпунктом-статьёй-абзацем / признать утратившим силу /
+# абзац исключить; адреса вплоть до абзаца, наследование «в статье 100: а) …») и применяет их к дереву
+# единиц детерминированно: неоднозначная инструкция (слова встречаются не один раз, нет единицы) —
+# в очередь сверки. `patch` пишет новые интервалы unit_text с даты вступления (текущий закрывается),
+# предки получают новый full_text; round-trip: база + законы = текст банка, расхождения — в очередь.
+# Инструмент diff_editions, API /units/{id}/history и /units/{id}/diff?a=&b=. Источники текстов законов:
+# publication.pravo.gov.ru — сканы без текстового слоя (нужен OCR), банк Минюста — поиск по полям
+# не задокументирован; пока законы подаются файлом:
+python -m taxcorpus patch --act nk1 --law закон-281-ФЗ.txt --number 281-ФЗ --date 2026-08-04 --published 2026-08-04 --dry-run
+python -m taxcorpus patch --act nk1 --law закон-281-ФЗ.txt --number 281-ФЗ --date 2026-08-04 --effective 2027-01-01
+python -m taxcorpus patch --queue --law /dev/null      # очередь сверки (failed)
 
 # мониторинг дел (F2): перезагрузка акта архивирует прежние тексты (unit_text_archive) и пишет события
 # unit_text_changed / unit_repealed / unit_added / parameter_changed; краулеры — document_added /

@@ -453,6 +453,18 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "strict": True,
     },
     {
+        "name": "diff_editions",
+        "description": "Текст нормы на две даты и построчный diff между ними (история редакций, F3). "
+                       "Для вопросов «как звучала норма на дату X» и переходных периодов.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"unit_id": {"type": "string"}, "date_a": {"type": "string"}, "date_b": {"type": "string"}},
+            "required": ["unit_id", "date_a", "date_b"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
         "name": "what_changed",
         "description": "Что изменилось в норме с даты: diff прежней и текущей редакции текста (если корпус "
                        "перезагружался), правки (list_amendments) и новые разъяснения с этой даты. Для раздела "
@@ -650,6 +662,13 @@ def execute_tool(corpus: Corpus, name: str, args: dict, as_of: str,
             if not result:
                 result = {"unit_id": args["unit_id"], "documents": [],
                           "note": "в корпусе нет разъяснений по этой норме на дату"}
+        elif name == "diff_editions":
+            conn = getattr(corpus, "conn", None)
+            if conn is None:
+                result = {"error": "история редакций доступна только с БД"}
+            else:
+                from .db import diff_versions
+                result = diff_versions(conn, args["unit_id"], args["date_a"], args["date_b"])
         elif name == "what_changed":
             conn = getattr(corpus, "conn", None)
             if conn is not None:
