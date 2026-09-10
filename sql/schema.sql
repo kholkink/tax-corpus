@@ -206,3 +206,12 @@ CREATE INDEX IF NOT EXISTS idx_document_search ON document USING GIN (search_vec
 ALTER TABLE document ADD COLUMN IF NOT EXISTS status TEXT;      -- actual | outdated
 ALTER TABLE document ADD COLUMN IF NOT EXISTS category TEXT;
 ALTER TABLE document ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+-- §7 плана: снимок корпуса — что именно было загружено (счётчики, хеши источников, коммит)
+CREATE TABLE IF NOT EXISTS snapshot (
+    snapshot_id BIGSERIAL PRIMARY KEY,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    description TEXT,
+    git_commit  TEXT,
+    content     JSONB NOT NULL
+);

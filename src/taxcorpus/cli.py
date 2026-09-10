@@ -427,6 +427,31 @@ def cmd_interpretations(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_snapshot(args: argparse.Namespace) -> int:
+    """Снимок корпуса (§7 плана): номер, дата, счётчики, хеши источников, коммит."""
+    import subprocess
+    from .db import connect, create_snapshot, ensure_schema
+
+    try:
+        commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True,
+                                text=True, check=False).stdout.strip() or None
+    except OSError:
+        commit = None
+    conn = connect(args.db_url)
+    try:
+        ensure_schema(conn, args.schema)
+        snap = create_snapshot(conn, args.description, commit)
+    finally:
+        conn.close()
+    print(f"снимок #{snap['snapshot_id']} от {snap['created_at']} (коммит {commit or '—'})")
+    print("счётчики:", json.dumps(snap["counts"], ensure_ascii=False))
+    for a in snap["acts"]:
+        print(f"  {a['act_code']}: редакция с {a['valid_from']}, источник {a['source_sha256']}")
+    for d in snap["documents"]:
+        print(f"  {d['agency']} {d['kind']}: {d['n']} (последний {d['latest']})")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="taxcorpus", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -548,6 +573,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_int.add_argument("--input", default="data/interpretations")
     p_int.add_argument("--data-dir", default="data/processed")
     p_int.set_defaults(func=cmd_interpretations)
+
+    p_snap = sub.add_parser("snapshot", help="зафиксировать снимок корпуса в БД (§7 плана)")
+    p_snap.add_argument("--description", default=None)
+    p_snap.add_argument("--db-url", default=None)
+    p_snap.add_argument("--schema", default=None)
+    p_snap.set_defaults(func=cmd_snapshot)
 
     return parser
 
