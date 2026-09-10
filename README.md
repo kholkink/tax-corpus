@@ -35,9 +35,11 @@ src/taxcorpus/
   textract.py   — текст из docx/pdf/xlsx/md/html; workspace.py — дело, файлы, версии, задачи,
                   инструменты дела; case_session.py — персистентная сессия агента в деле (ask_user)
   audit.py      — аудит документа (F1); workspace_store.py — зеркало метаданных дел в БД (P1)
+  jobs.py       — задачи и расписание (P3): краулеры, load_docs с событиями, check_bank_editions,
+                  embed, snapshot, eval_search, eval_agent, daily; журнал job_run
   api.py        — FastAPI: /units, /search, /resolve, /parameters, /terms, /interpretations,
                   /deadline, /ask
-  cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term / deadline / ask / load-docs / interpretations / embed / workspace / audit
+  cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term / deadline / ask / load-docs / interpretations / embed / workspace / audit / jobs
 sql/schema.sql  — базовая схема (идемпотентна): Act / Edition / Unit / UnitText / Reference /
                   Amendment / Parameter / Term / Document / Snapshot; sql/migrations/NNN_*.sql —
                   нумерованные миграции, применяются один раз (schema_version); 001 — метаданные
@@ -163,6 +165,13 @@ python -m taxcorpus workspace chat --slug delo1 --session <id> --message "отв
 # правки после даты документа, снятые письма, не упомянутые обязательные письма ФНС;
 # в UI — вкладка «Аудит документа», в деле — инструмент audit_document, API POST /audit
 python -m taxcorpus audit --file меморандум.docx --as-of 2026-09-10 --doc-date 2024-01-01
+
+# задачи и расписание (P3 плана ПО): журнал запусков в job_run, события корпуса в corpus_event
+python -m taxcorpus jobs list
+python -m taxcorpus jobs run daily            # краулеры -> load_docs -> check_bank_editions -> snapshot
+python -m taxcorpus jobs run crawl_fns -- --pages 114
+python -m taxcorpus jobs history --limit 20
+python -m taxcorpus jobs cron                 # строки для crontab (03:00 daily, пн 04:00 eval_agent)
 
 # оценка агента на эталоне (метрики §6 плана: citation precision/recall, hallucination
 # rate, temporal correctness, abstention; каждый вопрос — платный запрос к модели):
