@@ -33,12 +33,22 @@ CATEGORIES = ["commonlaw", "orgprofit", "fizprofit", "indirect", "property", "sp
 UA = "tax-corpus-research/0.1 (+https://github.com/kholkink/tax-corpus; kholkinkbauman@gmail.com)"
 
 
-def fetch(url: str, delay: float) -> str:
-    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "ru"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        data = resp.read()
-    time.sleep(delay)
-    return data.decode("utf-8", errors="replace")
+def fetch(url: str, delay: float, attempts: int = 4) -> str:
+    """GET с паузой; при обрыве (TLS EOF, 5xx, таймаут) — повтор с паузой 20/60/180 с."""
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept-Language": "ru"})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = resp.read()
+            time.sleep(delay)
+            return data.decode("utf-8", errors="replace")
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            pause = 20 * (3 ** attempt)
+            print(f"[retry] {url}: {type(exc).__name__}; пауза {pause} с", file=sys.stderr, flush=True)
+            time.sleep(pause)
+    raise last  # type: ignore[misc]
 
 
 class _Text(HTMLParser):
