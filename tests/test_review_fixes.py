@@ -238,3 +238,25 @@ def test_contextual_resolution_uses_source_ancestors():
     # абзац из текста, не принадлежащего пункту, — относительно статьи
     r = index.resolve_reference({"type": "unit", "paragraph_ordinal": 9}, "nk1.art10")
     assert r.status == "partial" and r.unit_id == "nk1.art10"
+
+
+def test_ranges_and_ordinal_lists_in_references():
+    recs = extract_references("u", "подпунктами 1 - 3 и 7 пункта 2 статьи 5")
+    assert [r["target"]["subpoint"] for r in recs] == ["1", "2", "3", "7"]
+    assert all(r["target"]["point"] == "2" and r["target"]["article"] == "5" for r in recs)
+    recs = extract_references("u", "в абзацах втором - четвертом и шестом настоящего пункта")
+    assert [r["target"]["paragraph_ordinal"] for r in recs] == [2, 3, 4, 6]
+    assert all(r["target"]["relative_to"] == "point" for r in recs)
+    recs = extract_references("u", "в абзацах втором и третьем пункта 1 настоящей статьи")
+    assert [(r["target"]["paragraph_ordinal"], r["target"]["point"]) for r in recs] == [(2, "1"), (3, "1")]
+
+
+def test_paragraph_counts_subpoint_lines():
+    index = UnitIndex(_records(CONTEXT_TEXT))
+    # п. 2: строка 1 — «Пункт два:», строки 2 и 3 — подпункты 1) и 2)
+    r = index.resolve_reference({"type": "unit", "point": "2", "paragraph_ordinal": 3}, "nk1.art10.p1")
+    assert (r.unit_id, r.status) == ("nk1.art10.p2.sp2", "resolved")
+    r = index.resolve_reference({"type": "unit", "point": "2", "paragraph_ordinal": 1}, "nk1.art10.p1")
+    assert r.unit_id == "nk1.art10.p2.ab1"
+    r = index.resolve_reference({"type": "unit", "point": "2", "paragraph_ordinal": 9}, "nk1.art10.p1")
+    assert r.status == "partial"
