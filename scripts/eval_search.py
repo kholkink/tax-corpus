@@ -21,7 +21,11 @@ from taxcorpus.tools import DbCorpus  # noqa: E402
 GOLDEN = json.loads((ROOT / "tests" / "golden" / "golden_v0.json").read_text(encoding="utf-8"))
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--rerank", default=None, help="модель кросс-энкодера (или 1 = BAAI/bge-reranker-v2-m3); медленно на CPU")
+    args = ap.parse_args(argv)
     load_dotenv(str(ROOT / ".env"))
     qs = [q for q in GOLDEN["questions"] if q["kind"] == "search"]
     as_of = GOLDEN["as_of"]
@@ -37,7 +41,14 @@ def main() -> int:
     if not corpus.hybrid.enabled:
         variants = {"lexical": variants["lexical"]}
         print("[warn] индекс не построен — только лексический вариант", file=sys.stderr)
-    report = {"as_of": as_of, "questions": len(qs), "variants": {}, "by_topic": {}, "per_question": {}}
+    elif args.rerank:
+        from taxcorpus.rerank import DEFAULT_RERANKER, Reranker
+        from taxcorpus.tools import HybridSearch
+        rr = Reranker(DEFAULT_RERANKER if args.rerank == "1" else args.rerank)
+        hybrid_rr = HybridSearch(corpus.hybrid.records, corpus.hybrid.verifier, dense, reranker=rr)
+        variants["rerank"] = lambda q: [r["unit_id"] for r in hybrid_rr.search(q, as_of, 5, corpus.search_lexical)]
+    report = {"as_of": as_of, "questions": len(qs), "variants": {}, "by_topic": {}, "per_question": {},
+              "rerank_model": (args.rerank if args.rerank else None)}
     for q in qs:
         report["by_topic"].setdefault(q.get("topic", "без темы"), {"questions": 0})["questions"] += 1
     for name, fn in variants.items():
@@ -64,4 +75,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))

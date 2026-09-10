@@ -1,0 +1,61 @@
+# P7 плана ПО: прод-контур одной командой. Ключи и адреса — в .env (см. .env.example).
+#   docker compose up -d db && docker compose run --rm app python -m taxcorpus ingest …
+#   docker compose up -d
+services:
+  db:
+    image: pgvector/pgvector:pg16          # PostgreSQL 16 + pgvector (миграция 006 создаст unit_embedding)
+    environment:
+      POSTGRES_DB: taxcorpus
+      POSTGRES_USER: taxcorpus
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taxcorpus}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taxcorpus -d taxcorpus"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    ports:
+      - "127.0.0.1:5433:5432"
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      TAXCORPUS_DB: postgresql://taxcorpus:${POSTGRES_PASSWORD:-taxcorpus}@db:5432/taxcorpus
+    volumes:
+      - ./workspaces:/app/workspaces      # дела — на диске хоста (источник истины)
+      - ./data/processed:/app/data/processed
+      - ./data/index:/app/data/index
+      - ./reports:/app/reports
+      - hf:/data/hf                       # кэш моделей (e5, реранкер)
+    ports:
+      - "127.0.0.1:8000:8000"
+    restart: unless-stopped
+
+  scheduler:                              # ежедневный конвейер и еженедельная оценка (см. jobs cron)
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      TAXCORPUS_DB: postgresql://taxcorpus:${POSTGRES_PASSWORD:-taxcorpus}@db:5432/taxcorpus
+    volumes:
+      - ./workspaces:/app/workspaces
+      - ./data/processed:/app/data/processed
+      - ./data/index:/app/data/index
+      - ./data/interpretations:/app/data/interpretations
+      - ./reports:/app/reports
+      - ./backups:/backups
+      - hf:/data/hf
+    command: ["bash", "scripts/scheduler.sh"]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  hf:
