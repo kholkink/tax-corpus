@@ -111,6 +111,9 @@ python -m taxcorpus term --term "индивидуальн"
 # (дни — рабочие, --calendar-days для календарных; переносы выходных — data/calendar/<год>.json):
 python -m taxcorpus deadline --start 2025-03-20 --amount 3 --unit months
 
+# провайдер модели — из .env (в .gitignore): ANTHROPIC_API_KEY, при необходимости
+# ANTHROPIC_BASE_URL (DeepSeek: https://api.deepseek.com/anthropic) и TAXCORPUS_MODEL (deepseek-chat);
+# без base_url по умолчанию claude-opus-5 с серверным фолбэком при отказе.
 # агент (слой 6): планирование -> инструменты корпуса -> синтез в фиксированном формате ->
 # детерминированная проверка каждой цитаты на существование и действие на дату ->
 # при проблемах один круг переработки. Нужны `pip install -e ".[agent]"` и ключ
@@ -128,6 +131,7 @@ python -m taxcorpus load-docs --input data/interpretations   # -> таблицы
 # 1 запрос / 2 с, повторный запуск дописывает): статус актуальности, теги по статьям НК:
 python scripts/fetch_fns_letters.py --pages 114          # весь раздел, ~1705 писем
 python scripts/fetch_minfin_letters.py                   # письма Минфина по 11 категориям раздела
+python scripts/fetch_court_acts.py                       # пленумы ВАС № 57 и № 53 с arbitr.ru (список в SEED)
 python -m taxcorpus snapshot --description "…"           # снимок корпуса: счётчики, хеши, коммит (§7)
 
 # HTTP API (слой 7): те же инструменты + /ask; бэкенд по TAXCORPUS_DB, иначе офлайн-корпус
