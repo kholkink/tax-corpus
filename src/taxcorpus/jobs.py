@@ -28,8 +28,9 @@ from psycopg.types.json import Json
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPTS = ROOT / "scripts"
 DATA = ROOT / "data"
-# UUID актов в банке ГАС — из каталога «Кодексы РФ» (data/raw/minjust_res_codes_v2.json)
-ACTS = {"nk1": "A2322F25-60CD-495C-A8C5-32E8951D5493", "nk2": "B5C1D49E-FAAD-4027-8721-C4ED5CA2F0A3"}
+# UUID актов в банке ГАС — из каталога «Кодексы РФ» (data/raw/minjust_res_codes_v2.json):
+# nk1 = ФЗ от 31.07.1998 № 146-ФЗ, nk2 = ФЗ от 05.08.2000 № 117-ФЗ (сверять по названию, не по памяти)
+ACTS = {"nk1": "F7DE1846-3C6A-47AB-B440-B8E4CEA90C68", "nk2": "B5C1D49E-FAAD-4027-8721-C4ED5CA2F0A3"}
 
 
 @dataclass
