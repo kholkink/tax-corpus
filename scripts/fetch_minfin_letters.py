@@ -71,15 +71,48 @@ def html_to_text(fragment: str) -> str:
     return re.sub(r"\n\s*\n+", "\n\n", text).strip()
 
 
-def _block(page: str, start_marker: str, end_marker: str) -> str | None:
+def _div_block(page: str, start_marker: str) -> str | None:
+    """Содержимое <div ...> от start_marker до парного закрывающего тега (подсчёт вложенности)."""
     i = page.find(start_marker)
     if i < 0:
         return None
-    j = page.find(end_marker, i)
-    return page[i:j if j > 0 else None]
+    depth = 0
+    for m in re.finditer(r"<div\b|</div>", page[i:]):
+        depth += 1 if m.group(0) != "</div>" else -1
+        if depth == 0:
+            return page[i:i + m.end()]
+    return page[i:]
 
 
-RE_TITLE = re.compile(r"Письмо\s+Минфина\s+России\s+от\s+(\d{2}\.\d{2}\.\d{4})\s*(?:№|N)\s*(\S+)\s*(.*)", re.S)
+# «Письмо Минфина России от 15.05.2025 № 03-03-06/1/47786 …» и старый порядок
+# «Письмо Минфина России № 03-02-РЗ/62336 от 29.10.2015 …», год бывает двузначным («07.08.14»)
+RE_TITLE = re.compile(
+    r"Письмо\s+Минфина\s+России\s+"
+    r"(?:от\s+(?P<d1>\d{2}\.\d{2}\.\d{2,4})\s*(?:№|N)\s*(?P<n1>\S+)"
+    r"|(?:№|N)\s*(?P<n2>\S+)\s+от\s+(?P<d2>\d{2}\.\d{2}\.\d{2,4}))\s*(?P<subject>.*)", re.S)
+
+
+def docx_text(data: bytes) -> str:
+    """Текст из docx без сторонних библиотек: word/document.xml -> абзацы."""
+    import io
+    import zipfile
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        xml = z.read("word/document.xml").decode("utf-8", errors="replace")
+    paragraphs = []
+    for para in re.findall(r"<w:p[ >].*?</w:p>", xml, re.S):
+        runs = re.findall(r"<w:t(?:\s[^>]*)?>(.*?)</w:t>", para, re.S)
+        line = html.unescape("".join(runs)).strip()
+        if line:
+            paragraphs.append(line)
+    return "\n\n".join(paragraphs)
+
+
+def fetch_bytes(url: str, delay: float) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        data = resp.read()
+    time.sleep(delay)
+    return data
 
 
 def parse_category(page_html: str) -> tuple[list[str], int]:
@@ -91,7 +124,7 @@ def parse_category(page_html: str) -> tuple[list[str], int]:
     return ids, int(m.group(1)) if m else 1
 
 
-def parse_document(page: str, doc_id: str, url: str) -> dict | None:
+def parse_document(page: str, doc_id: str, url: str, delay: float = 2.0) -> dict | None:
     m = re.search(r"<h1[^>]*>(.*?)</h1>", page, re.S)
     if not m:
         return None
@@ -99,10 +132,27 @@ def parse_document(page: str, doc_id: str, url: str) -> dict | None:
     t = RE_TITLE.match(title_text)
     if not t:
         return None
-    d, mth, y = t.group(1).split(".")
-    body = _block(page, '<div class="text_wrapper">', '<!-- end') or ""
-    text = html_to_text(body)
-    if not text:
+    d, mth, y = (t.group("d1") or t.group("d2")).split(".")
+    if len(y) == 2:
+        y = ("20" if int(y) < 50 else "19") + y
+    number = t.group("n1") or t.group("n2")
+    body = _div_block(page, '<div class="text_wrapper">') or ""
+    # в text_wrapper старых документов только теги и кнопки «поделиться» — текста нет
+    text = html_to_text(re.sub(r"<ul class=\"tag_list\">.*?</ul>", "", body, flags=re.S))
+    text_source = "html"
+    if len(text) < 200:
+        docx = re.search(r'href="([^"]+\.docx)"', page)
+        if docx:
+            try:
+                text = docx_text(fetch_bytes(BASE + docx.group(1), delay))
+                text_source = "docx"
+            except Exception as exc:  # битое вложение — документ пропускаем
+                print(f"[warn] docx {docx.group(1)}: {exc}", file=sys.stderr)
+                return None
+        else:
+            print(f"[warn] {url}: текста нет ни в HTML, ни в docx (только pdf?) — пропуск", file=sys.stderr)
+            return None
+    if len(text) < 200:
         return None
     section = re.search(r'Опубликован в разделе:\s*<a[^>]*>(.*?)</a>', page, re.S)
     published = re.search(r"Опубликовано:\s*(\d{2}\.\d{2}\.\d{4})", page)
@@ -111,9 +161,10 @@ def parse_document(page: str, doc_id: str, url: str) -> dict | None:
         "doc_id": f"minfin-{doc_id}",
         "kind": "letter",
         "agency": "Минфин",
-        "number": html.unescape(t.group(2)),
+        "number": html.unescape(number),
         "date": f"{y}-{mth}-{d}",
-        "title": " ".join(t.group(3).split()),
+        "title": " ".join(t.group("subject").split()).strip('"«» '),
+        "text_source": text_source,
         "text": text,
         "source_url": url,
         "mandatory": False,
@@ -169,7 +220,7 @@ def main() -> int:
                         print(f"[warn] {doc_url}: {exc}", file=sys.stderr)
                         continue
                     (raw_dir / f"{doc_id}.html").write_text(page, encoding="utf-8")
-                    doc = parse_document(page, doc_id, doc_url)
+                    doc = parse_document(page, doc_id, doc_url, args.delay)
                     if doc is None:
                         print(f"[warn] {doc_url}: не распознано", file=sys.stderr)
                         continue
