@@ -19,9 +19,54 @@ from typing import Any, Protocol
 from .amendments import amendments_from_records, repeal_dates
 from .citations import CitationVerifier
 from .deadlines import ProductionCalendar, compute_deadline
+from .embeddings import DenseIndex, rrf
 from .interpretations import InterpretationIndex, load_documents
 from .resolver import UnitIndex, resolve_citation
 from .terms import extract_terms
+
+
+class HybridSearch:
+    """Слияние лексического и семантического поиска (RRF), слой 4 плана.
+
+    lexical(query, as_of, n) -> [row]; dense — DenseIndex (если индекс построен).
+    Метаданные dense-хитов берутся из записей корпуса; действие на дату — через verifier.
+    """
+
+    def __init__(self, records: dict[str, dict], verifier, dense: DenseIndex | None = None,
+                 depth: int = 30):
+        self.records = records
+        self.verifier = verifier
+        self.dense = dense
+        self.depth = depth
+
+    @property
+    def enabled(self) -> bool:
+        return self.dense is not None and self.dense.ready
+
+    def search(self, query: str, as_of: str, limit: int, lexical) -> list[dict]:
+        lex_rows = lexical(query, as_of, self.depth)
+        if not self.enabled:
+            return lex_rows[:limit]
+        allowed = {uid for uid, r in self.records.items()
+                   if r.get("is_chunk") and self.verifier.in_force(uid, as_of)}
+        dense_hits = self.dense.search(query, limit=self.depth, allowed=allowed)
+        fused = rrf([[r["unit_id"] for r in lex_rows], [uid for uid, _ in dense_hits]])
+        by_lex = {r["unit_id"]: r for r in lex_rows}
+        dense_score = dict(dense_hits)
+        out = []
+        for uid, score in fused[:limit]:
+            row = by_lex.get(uid)
+            if row is None:
+                r = self.records[uid]
+                row = {"unit_id": uid, "kind": r["kind"], "label": r["label"], "title": r.get("title"),
+                       "context": r.get("context"), "pass": "dense",
+                       "snippet": (r.get("full_text") or r["text"])[:300]}
+            else:
+                row = dict(row)
+            row["rank"] = round(score, 4)
+            row["sources"] = [s for s, ok in (("lexical", uid in by_lex), ("dense", uid in dense_score)) if ok]
+            out.append(row)
+        return out
 
 
 class Corpus(Protocol):
@@ -72,6 +117,7 @@ class LocalCorpus:
         if interpretations_dir and Path(interpretations_dir).is_dir():
             docs = load_documents(interpretations_dir)
         self._interpretations = InterpretationIndex(docs, self.index)
+        self.hybrid = HybridSearch(self.units, self._verifier, DenseIndex())
 
     @classmethod
     def from_records(cls, records: list[dict], editions: dict[str, str] | None = None,
@@ -89,6 +135,7 @@ class LocalCorpus:
         self.parameters = parameters or []
         self.terms = extract_terms(records)
         self._interpretations = InterpretationIndex(documents or [], self.index)
+        self.hybrid = HybridSearch(self.units, self._verifier, None)
         return self
 
     def verifier(self) -> CitationVerifier:
@@ -125,6 +172,9 @@ class LocalCorpus:
         return out
 
     def search(self, query: str, as_of: str, limit: int = 10) -> list[dict]:
+        return self.hybrid.search(query, as_of, limit, self.search_lexical)
+
+    def search_lexical(self, query: str, as_of: str, limit: int = 10) -> list[dict]:
         stems = {_stem(w) for w in re.findall(r"[а-яёa-z0-9]+", query.lower()) if len(w) > 2}
         scored = []
         for r in self.records:
@@ -175,6 +225,7 @@ class DbCorpus:
         self.db = _db
         self.conn = conn
         self._local = LocalCorpus(data_dir, parameters_path=None)
+        self.hybrid = self._local.hybrid
 
     def verifier(self) -> CitationVerifier:
         return self._local.verifier()
@@ -186,6 +237,9 @@ class DbCorpus:
         return self._local.resolve_citation(citation, context_unit_id)
 
     def search(self, query: str, as_of: str, limit: int = 10) -> list[dict]:
+        return self.hybrid.search(query, as_of, limit, self.search_lexical)
+
+    def search_lexical(self, query: str, as_of: str, limit: int = 10) -> list[dict]:
         return self.db.search_units(self.conn, query, as_of, limit=limit)
 
     def list_amendments(self, unit_id: str, since: str | None = None) -> list[dict]:

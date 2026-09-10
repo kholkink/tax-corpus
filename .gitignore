@@ -24,3 +24,6 @@ data/raw/minfin/
 .venv-linux/
 .env
 data/raw/courts/
+
+# семантический индекс (десятки МБ, строится командой embed)
+data/index/
