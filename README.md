@@ -37,6 +37,8 @@ src/taxcorpus/
   textract.py   — текст из docx/pdf/xlsx/md/html; workspace.py — дело, файлы, версии, задачи,
                   инструменты дела; case_session.py — персистентная сессия агента в деле (ask_user)
   audit.py      — аудит документа (F1); workspace_store.py — зеркало метаданных дел в БД (P1)
+  facts.py      — факты и таймлайн дела с дословными цитатами, сроки из фактов (F6);
+  providers.py  — профили провайдера модели (P4); redact.py — маскировка ПДн для облака (F9)
   jobs.py       — задачи и расписание (P3): краулеры, load_docs с событиями, check_bank_editions,
                   embed, snapshot, eval_search, eval_agent, daily; журнал job_run
   api.py        — FastAPI: /units, /search, /resolve, /parameters, /terms, /interpretations,
@@ -45,7 +47,7 @@ src/taxcorpus/
 sql/schema.sql  — базовая схема (идемпотентна): Act / Edition / Unit / UnitText / Reference /
                   Amendment / Parameter / Term / Document / Snapshot; sql/migrations/NNN_*.sql —
                   нумерованные миграции, применяются один раз (schema_version); 001 — метаданные
-                  дел (workspace, workspace_file, session, session_question, audit)
+                  дел (workspace, workspace_file, session, session_question, audit, fact, job_run, corpus_event)
 tests/          — pytest: идеализированный формат, формат банка ГАС, валидатор, нормализация
 scripts/setup_postgres.sh — локальный PostgreSQL 16 без прав администратора
 ```
@@ -170,6 +172,16 @@ python -m taxcorpus workspace add --slug delo1 акт.docx требование.
 python -m taxcorpus workspace chat --slug delo1                              # REPL: /files /tasks /quit
 python -m taxcorpus workspace chat --slug delo1 --message "Подготовь позицию по notes/задача.md"
 python -m taxcorpus workspace chat --slug delo1 --session <id> --message "ответ на вопрос агента"
+
+# факты и таймлайн дела (F6): агент извлекает факты из документов только с ДОСЛОВНОЙ цитатой из
+# файла (иначе факт отклоняется), даты/суммы/периоды нормализуются, юрист подтверждает; роли дат
+# (act_received, decision_received, decision_date, period_end …) дают сроки процедуры и давность
+# через калькуляторы F5 и ставят задачи. Вкладка «Факты и таймлайн» в UI, API /workspaces/{slug}/facts:
+python -m taxcorpus workspace facts --slug delo1                 # таблица фактов (? — не подтверждён)
+python -m taxcorpus workspace add-fact --slug delo1 --kind event --value 27.03.2026 --text "акт вручён" --role act_received
+python -m taxcorpus workspace confirm-fact --slug delo1 --id 2
+python -m taxcorpus workspace timeline --slug delo1
+python -m taxcorpus workspace deadlines --slug delo1             # сроки со ссылками на нормы -> задачи
 
 # аудит документа (F1 плана ПО): свой или чужой меморандум -> по каждой ссылке статус на дату,
 # правки после даты документа, снятые письма, не упомянутые обязательные письма ФНС;

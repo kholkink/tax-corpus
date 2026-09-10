@@ -520,7 +520,7 @@ def _open_corpus(args: argparse.Namespace):
 
 
 def cmd_workspace(args: argparse.Namespace) -> int:
-    """Рабочее пространство дела: new / list / files / add / sessions / chat."""
+    """Рабочее пространство дела: new / list / files / add / facts / timeline / deadlines / sessions / chat."""
     from .workspace import Workspace
 
     if args.ws_cmd == "new":
@@ -545,6 +545,8 @@ def cmd_workspace(args: argparse.Namespace) -> int:
         for f in args.files:
             print("добавлен:", ws.add_file(f, args.dest))
         return 0
+    if args.ws_cmd in ("facts", "add-fact", "confirm-fact", "timeline", "deadlines"):
+        return _facts(args, ws)
     from .case_session import CaseSession
     if args.ws_cmd == "sessions":
         for s in CaseSession.list_sessions(ws):
@@ -552,6 +554,67 @@ def cmd_workspace(args: argparse.Namespace) -> int:
         return 0
     if args.ws_cmd == "chat":
         return _chat(args, ws)
+    return 1
+
+
+def _facts(args: argparse.Namespace, ws) -> int:
+    """Факты и таймлайн дела (F6)."""
+    from .facts import FactError, FactStore
+    store = FactStore(ws)
+    if args.ws_cmd == "facts":
+        facts = store.list(kind=args.kind)
+        if getattr(args, "json", False):
+            print(json.dumps(facts, ensure_ascii=False, indent=2))
+            return 0
+        for f in facts:
+            mark = "✓" if f["confirmed"] else "?"
+            src = f" ← {f['source_path']}" if f.get("source_path") else ""
+            role = f" [{f['role']}]" if f.get("role") else ""
+            print(f"{mark} #{f['fact_id']:<3} {f['kind']:7s} {str(f['value']):24s} {f['text']}{role}{src}")
+        if not facts:
+            print("фактов нет")
+        return 0
+    if args.ws_cmd == "add-fact":
+        try:
+            fact = store.add(args.kind, args.value, args.text, args.source, args.quote, args.page, args.role,
+                             extracted_by="lawyer")
+        except FactError as exc:
+            print(f"ошибка: {exc}", file=sys.stderr)
+            return 2
+        print(f"факт #{fact.fact_id} добавлен: {fact.kind} {fact.value} — {fact.text}")
+        return 0
+    if args.ws_cmd == "confirm-fact":
+        try:
+            fact = store.confirm(args.id, not args.revoke)
+        except FactError as exc:
+            print(f"ошибка: {exc}", file=sys.stderr)
+            return 2
+        print(f"факт #{fact.fact_id}: {'подтверждён' if fact.confirmed else 'подтверждение снято'}")
+        return 0
+    if args.ws_cmd == "timeline":
+        for t in store.timeline(args.confirmed_only):
+            end = f" — {t['end']}" if t.get("end") else ""
+            print(f"{t['date']}{end}  {'✓' if t['confirmed'] else '?'} {t['text']}" + (f" [{t['role']}]" if t.get("role") else ""))
+        return 0
+    if args.ws_cmd == "deadlines":
+        from .deadlines import ProductionCalendar
+        out = store.derive_deadlines(ProductionCalendar.load(), args.confirmed_only, not args.no_tasks)
+        if getattr(args, "json", False):
+            print(json.dumps(out, ensure_ascii=False, indent=2))
+            return 0
+        for d in out["deadlines"]:
+            print(f"до {d['due']}  {d['title']}")
+        if out.get("limitation"):
+            lim = out["limitation"]
+            print(f"давность: три года истекают {lim['limitation_ends']}; решение {lim['decision_date']} — "
+                  f"{'за пределами срока' if lim['expired'] else 'в пределах срока'}")
+        for step in out["steps"]:
+            print("  ·", step)
+        for m in out["missing"]:
+            print("не хватает:", m)
+        if out["tasks"]:
+            print(f"поставлено задач: {len(out['tasks'])}")
+        return 0
     return 1
 
 
@@ -862,6 +925,31 @@ def build_parser() -> argparse.ArgumentParser:
     w_add.add_argument("--slug", required=True)
     w_add.add_argument("--dest", default="inbox", choices=["inbox", "notes"])
     w_add.add_argument("files", nargs="+")
+    w_facts = ws_sub.add_parser("facts", help="таблица фактов дела (F6)")
+    w_facts.add_argument("--slug", required=True)
+    w_facts.add_argument("--kind", default=None)
+    w_facts.add_argument("--json", action="store_true")
+    w_af = ws_sub.add_parser("add-fact", help="добавить факт юриста")
+    w_af.add_argument("--slug", required=True)
+    w_af.add_argument("--kind", required=True, choices=["date", "amount", "party", "event", "period", "regime", "other"])
+    w_af.add_argument("--value", required=True)
+    w_af.add_argument("--text", required=True, help="подпись факта")
+    w_af.add_argument("--role", default=None, help="act_received | decision_received | decision_date | …")
+    w_af.add_argument("--source", default=None, help="файл дела")
+    w_af.add_argument("--quote", default=None, help="дословная цитата из файла")
+    w_af.add_argument("--page", type=int, default=None)
+    w_cf = ws_sub.add_parser("confirm-fact", help="подтвердить факт агента")
+    w_cf.add_argument("--slug", required=True)
+    w_cf.add_argument("--id", type=int, required=True)
+    w_cf.add_argument("--revoke", action="store_true")
+    w_tl = ws_sub.add_parser("timeline", help="таймлайн дела")
+    w_tl.add_argument("--slug", required=True)
+    w_tl.add_argument("--confirmed-only", action="store_true")
+    w_dl = ws_sub.add_parser("deadlines", help="сроки процедуры и давность из фактов -> задачи")
+    w_dl.add_argument("--slug", required=True)
+    w_dl.add_argument("--confirmed-only", action="store_true")
+    w_dl.add_argument("--no-tasks", action="store_true")
+    w_dl.add_argument("--json", action="store_true")
     w_sess = ws_sub.add_parser("sessions", help="сессии дела")
     w_sess.add_argument("--slug", required=True)
     w_chat = ws_sub.add_parser("chat", help="диалог с агентом в деле (REPL или --message)")

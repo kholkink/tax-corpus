@@ -119,10 +119,35 @@ def upsert_session(conn, workspace_id: int, session: CaseSession) -> None:
             )
 
 
+def sync_facts(conn, ws: Workspace, workspace_id: int) -> int:
+    """Зеркало facts.json (F6)."""
+    from .facts import FactStore
+    facts = FactStore(ws).facts
+    with conn.transaction():
+        for f in facts:
+            conn.execute(
+                """
+                INSERT INTO fact (workspace_id, fact_id, kind, value, text, role, source_path, page, quote,
+                                  extracted_by, confirmed, created_at, confirmed_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (workspace_id, fact_id) DO UPDATE SET kind = EXCLUDED.kind, value = EXCLUDED.value,
+                    text = EXCLUDED.text, role = EXCLUDED.role, source_path = EXCLUDED.source_path,
+                    page = EXCLUDED.page, quote = EXCLUDED.quote, extracted_by = EXCLUDED.extracted_by,
+                    confirmed = EXCLUDED.confirmed, confirmed_at = EXCLUDED.confirmed_at
+                """,
+                (workspace_id, f.fact_id, f.kind, str(f.value), f.text, f.role, f.source_path, f.page, f.quote,
+                 f.extracted_by, f.confirmed, f.created_at, f.confirmed_at),
+            )
+        conn.execute("DELETE FROM fact WHERE workspace_id = %s AND NOT (fact_id = ANY(%s))",
+                     (workspace_id, [f.fact_id for f in facts]))
+    return len(facts)
+
+
 def sync_workspace(conn, ws: Workspace, agent=None) -> dict:
-    """Полная синхронизация дела: манифест, файлы, все сессии (по файлам sessions/)."""
+    """Полная синхронизация дела: манифест, файлы, факты, все сессии (по файлам sessions/)."""
     workspace_id = upsert_workspace(conn, ws)
     files = sync_files(conn, ws, workspace_id)
+    facts = sync_facts(conn, ws, workspace_id)
     sessions = 0
     for p in sorted((ws.path / "sessions").glob("*.json")):
         data = json.loads(p.read_text(encoding="utf-8"))
@@ -153,7 +178,7 @@ def sync_workspace(conn, ws: Workspace, agent=None) -> dict:
                      q.get("asked_at"), q.get("answer"), q.get("answered_at")),
                 )
         sessions += 1
-    return {"workspace_id": workspace_id, "files": files, "sessions": sessions}
+    return {"workspace_id": workspace_id, "files": files, "facts": facts, "sessions": sessions}
 
 
 def subscriptions_for(conn, workspace_id: int) -> list[str]:

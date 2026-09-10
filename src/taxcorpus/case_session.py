@@ -18,6 +18,7 @@ from pathlib import Path
 from .agent import FINAL_PROMPT, REWORK_PROMPT, SYSTEM_PROMPT, TaxAgent, _text_of
 from .citations import VerificationReport
 from .tools import TOOL_DEFINITIONS, execute_tool
+from .facts import FACT_TOOL_NAMES, FACT_TOOLS, FactStore
 from .workspace import WORKSPACE_TOOL_NAMES, WORKSPACE_TOOLS, Workspace
 
 WORKSPACE_RULES = """
@@ -28,6 +29,7 @@ WORKSPACE_RULES = """
 - Начни с notes/задача.md и файлов inbox/. Если для ответа не хватает факта, который нельзя взять из файлов, — ask_user (один конкретный вопрос).
 - Результат исследования сохраняй в research/<тема>.md через write_file в формате ответа (Вывод, Обоснование, Риски и оговорки, Что изменилось, Уверенность, Дата) плюс раздел «Факты дела» со ссылками на файлы. Черновики документов — в drafts/.
 - Файлы в inbox/ и notes/ не изменяй; выводы для протокола дописывай в notes/протокол.md через append_note.
+- Факты из документов фиксируй в таблице фактов (add_fact) с дословной цитатой из файла и ролью для дат процедуры (act_received, decision_received, decision_date …); сроки и давность считай derive_deadlines, а не вручную. В выводах опирайся на подтверждённые юристом факты (list_facts) или текст файлов; неподтверждённые — как гипотезы с оговоркой.
 - Задачи юристу (получить документ, уточнить у клиента) ставь через create_task.
 - В конце хода кратко скажи, что сделано, какие файлы созданы/обновлены и что ждёт юриста."""
 
@@ -130,7 +132,7 @@ class CaseSession:
         return text
 
     def tools(self) -> list[dict]:
-        return [*TOOL_DEFINITIONS, *WORKSPACE_TOOLS]
+        return [*TOOL_DEFINITIONS, *WORKSPACE_TOOLS, *FACT_TOOLS]
 
     def _run_workspace_tool(self, name: str, args: dict) -> tuple[str, bool]:
         try:
@@ -159,6 +161,17 @@ class CaseSession:
                 result = self.ws.append_note(args["path"], args["text"])
             elif name == "create_task":
                 result = self.ws.create_task(args["title"], args.get("due"), args.get("details", ""))
+            elif name == "list_facts":
+                result = FactStore(self.ws).list(kind=args.get("kind"),
+                                                 confirmed=True if args.get("confirmed_only") else None)
+            elif name == "add_fact":
+                fact = FactStore(self.ws).add(args["kind"], args["value"], args["text"], args.get("source_path"),
+                                              args.get("quote"), args.get("page"), args.get("role"),
+                                              extracted_by="agent")
+                result = {**fact.to_dict(), "note": "факт записан как неподтверждённый; юрист подтвердит в таблице фактов"}
+            elif name == "derive_deadlines":
+                result = FactStore(self.ws).derive_deadlines(self.agent.calendar,
+                                                             confirmed_only=bool(args.get("confirmed_only")))
             elif name == "audit_document":
                 from .audit import audit_text, render_markdown
                 text = self.ws.text_of(args["path"])
@@ -233,7 +246,7 @@ class CaseSession:
                     continue
                 if self.redactor:  # аргументы модели содержат плейсхолдеры — вернуть реальные значения
                     args = json.loads(self._in(json.dumps(args, ensure_ascii=False)))
-                if block.name in WORKSPACE_TOOL_NAMES:
+                if block.name in WORKSPACE_TOOL_NAMES or block.name in FACT_TOOL_NAMES:
                     output, is_error = self._run_workspace_tool(block.name, args)
                 else:
                     output, is_error = execute_tool(self.agent.corpus, block.name, args, as_of,
