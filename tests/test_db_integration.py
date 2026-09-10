@@ -125,3 +125,16 @@ def test_migrations_apply_once_and_workspace_store_syncs(tmp_path):
         # повторная синхронизация идемпотентна
         assert sync_workspace(conn, ws)["workspace_id"] == info["workspace_id"]
         conn.execute("DELETE FROM workspace WHERE slug = 'it-sync'")
+
+
+def test_unit_versions_and_parameters_for_unit():
+    from taxcorpus.db import parameters_for_unit, unit_versions
+
+    with _conn() as conn:
+        versions = unit_versions(conn, "nk2.ch21.art164.p3")
+        params = parameters_for_unit(conn, "nk2.ch21.art164", "2026-09-09")
+        desk = parameters_for_unit(conn, "nk1.ch14.art88.p2", "2026-09-09")
+        none = parameters_for_unit(conn, "nk9.none", "2026-09-09")
+    assert versions and versions[-1]["current"] and versions[-1]["chars"] > 0
+    assert any(p["name"] == "vat_rate_general" for p in params) and all(p["source_unit_id"].startswith("nk2.ch21.art164") for p in params)
+    assert [p["name"] for p in desk] == ["desk_audit_duration"] and none == []

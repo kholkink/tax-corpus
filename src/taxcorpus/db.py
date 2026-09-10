@@ -309,6 +309,33 @@ ABBREVIATIONS: dict[str, str] = {
 }
 
 
+def unit_versions(conn, unit_id: str) -> list[dict]:
+    """Все интервалы текста единицы (история редакций, F12/F3): от старых к новым."""
+    return conn.execute(
+        """
+        SELECT t.id AS text_id, t.valid_from, t.valid_to, t.edition_id,
+               ('редакция с ' || e.valid_from::text || coalesce(' — ' || e.notes, '')) AS edition,
+               t.edit_note, t.text_hash, length(coalesce(t.full_text, t.text)) AS chars,
+               (t.valid_to IS NULL) AS current
+        FROM unit_text t LEFT JOIN edition e ON e.edition_id = t.edition_id
+        WHERE t.unit_id = %s
+        ORDER BY t.valid_from NULLS FIRST, t.id
+        """, (unit_id,)).fetchall()
+
+
+def parameters_for_unit(conn, unit_id: str, as_of_date: str | None = None) -> list[dict]:
+    """Параметры (ставки, сроки), заякоренные в этой единице или её потомках."""
+    return conn.execute(
+        """
+        SELECT name, title, value, unit, valid_from, valid_to, source_unit_id, anchor, region, status
+        FROM parameter
+        WHERE (source_unit_id = %s OR source_unit_id LIKE %s)
+          AND (%s::date IS NULL OR ((valid_from IS NULL OR valid_from <= %s::date)
+                                     AND (valid_to IS NULL OR valid_to > %s::date)))
+        ORDER BY source_unit_id, name, valid_from NULLS FIRST
+        """, (unit_id, unit_id + ".%", as_of_date, as_of_date, as_of_date)).fetchall()
+
+
 def expand_query(query: str) -> list[str]:
     """Запрос -> полные формы найденных аббревиатур (для OR-веток поиска)."""
     expansions = []
