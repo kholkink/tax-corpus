@@ -23,7 +23,12 @@ src/taxcorpus/
   terms.py      — термины: ст. 11 и отраслевые словари («в целях настоящей главы …
                   понятия:») с областью действия -> таблица term
   deadlines.py  — compute_deadline по ст. 6.1 (п. 2–8), производственный календарь
-  cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term / deadline
+  citations.py  — проверка цитат в тексте ответа: резолв + действие на дату (OK/STALE/MISS/PART)
+  tools.py      — инструменты агента (слой 5) с двумя бэкендами: DbCorpus (PostgreSQL) и
+                  LocalCorpus (JSONL, офлайн); описания для function calling
+  agent.py      — тонкий агент над function calling (ручной цикл, без фреймворков):
+                  системный промпт «цитируй или откажись», проверка цитат, переработка, журнал
+  cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term / deadline / ask
 sql/schema.sql  — Act / Edition / Unit / UnitText / Reference / Amendment / Parameter / Term /
                   raw_document / parse_run
 tests/          — pytest: идеализированный формат, формат банка ГАС, валидатор, нормализация
@@ -94,6 +99,13 @@ python -m taxcorpus term --term "индивидуальн"
 # срок по ст. 6.1 НК: каждая операция расчёта — со ссылкой на пункт статьи
 # (дни — рабочие, --calendar-days для календарных; переносы выходных — data/calendar/<год>.json):
 python -m taxcorpus deadline --start 2025-03-20 --amount 3 --unit months
+
+# агент (слой 6): планирование -> инструменты корпуса -> синтез в фиксированном формате ->
+# детерминированная проверка каждой цитаты на существование и действие на дату ->
+# при проблемах один круг переработки. Нужны `pip install -e ".[agent]"` и ключ
+# (ANTHROPIC_API_KEY или `ant auth login`); модель по умолчанию claude-opus-5:
+python -m taxcorpus ask --question "Сколько длится камеральная проверка?" --as-of 2026-09-10 --log reports/ask.json
+python -m taxcorpus ask --question "…" --local   # офлайн-корпус из JSONL без БД (поиск грубый)
 
 # отчёт по частично разрешённым ссылкам (очередь сверки):
 python scripts/report_partial.py
