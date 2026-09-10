@@ -186,6 +186,13 @@ def check_bank_editions(ctx: JobContext) -> None:
     ctx.stats["acts_found"] = found
 
 
+@job("crawl_key_rate", "ключевая ставка ЦБ (cbr.ru) -> data/parameters/key_rate.json")
+def crawl_key_rate(ctx: JobContext) -> None:
+    _script("fetch_key_rate").main(ctx.argv or [])
+    data = json.loads((DATA / "parameters" / "key_rate.json").read_text(encoding="utf-8"))
+    ctx.stats.update(intervals=len(data["intervals"]), last_day=data["last_day"], last_rate=data["intervals"][-1]["rate"])
+
+
 @job("embed", "семантический индекс чанков (долго на CPU)")
 def embed(ctx: JobContext) -> None:
     from .embeddings import DenseIndex
@@ -228,7 +235,8 @@ def eval_agent(ctx: JobContext) -> None:
 
 @job("daily", "ежедневный конвейер: краулеры -> load_docs -> check_bank_editions -> snapshot")
 def daily(ctx: JobContext) -> None:
-    for name in ("crawl_fns", "crawl_minfin", "crawl_courts", "load_docs", "check_bank_editions", "snapshot"):
+    for name in ("crawl_fns", "crawl_minfin", "crawl_courts", "crawl_key_rate", "load_docs",
+                 "check_bank_editions", "snapshot"):
         ctx.say(f"=== {name}")
         sub = run_job(name, [], conn=ctx.conn)
         ctx.stats[name] = {"status": sub["status"], **sub["stats"]}

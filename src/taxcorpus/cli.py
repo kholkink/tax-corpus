@@ -663,6 +663,35 @@ def cmd_jobs(args: argparse.Namespace) -> int:
     return 0 if result["status"] == "ok" else 1
 
 
+def cmd_calc(args: argparse.Namespace) -> int:
+    """Калькуляторы с цитатами (F5): аргументы — JSON или key=value."""
+    from .deadlines import ProductionCalendar
+    from .tools import run_calculator
+
+    params: dict = {}
+    for item in args.params:
+        if item.startswith("{"):
+            params.update(json.loads(item))
+        elif "=" in item:
+            k, v = item.split("=", 1)
+            try:
+                params[k] = json.loads(v)      # числа, true/false, null, списки
+            except json.JSONDecodeError:
+                params[k] = v                  # строки и даты как есть
+    try:
+        result = run_calculator(args.name, params, ProductionCalendar.load())
+    except (ValueError, KeyError) as exc:
+        print(f"ошибка: {exc}", file=sys.stderr)
+        return 1
+    print(f"{result['name']}: {json.dumps(result['value'], ensure_ascii=False)}")
+    for step in result["steps"]:
+        print(f"  - {step}")
+    print("нормы: " + ", ".join(result["applied_units"]))
+    for w in result["warnings"]:
+        print(f"[внимание] {w}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="taxcorpus", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -852,6 +881,12 @@ def build_parser() -> argparse.ArgumentParser:
     j_run.add_argument("name")
     j_run.add_argument("job_args", nargs=argparse.REMAINDER, help="аргументы задачи после --")
     p_jobs.set_defaults(func=cmd_jobs)
+
+    p_calc = sub.add_parser("calc", help="калькуляторы с цитатами: compute_penalty / compute_fine / "
+                                         "appeal_deadlines / limitation_status (F5)")
+    p_calc.add_argument("name")
+    p_calc.add_argument("params", nargs="*", help="key=value или JSON-объект")
+    p_calc.set_defaults(func=cmd_calc)
 
     return parser
 

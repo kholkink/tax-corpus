@@ -119,6 +119,16 @@ def deadline(req: DeadlineRequest) -> dict:
             "steps": r.steps, "applied_units": r.applied, "calendar_note": r.calendar_note}
 
 
+@app.post("/calc/{name}")
+def calc(name: str, args: dict[str, Any]) -> dict:
+    """Калькуляторы с цитатами (F5): compute_penalty, compute_fine, appeal_deadlines, limitation_status."""
+    from .tools import run_calculator
+    try:
+        return run_calculator(name, args, ProductionCalendar.load())
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 class AskRequest(BaseModel):
     question: str
     as_of: date | None = None
