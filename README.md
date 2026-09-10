@@ -135,9 +135,10 @@ python -m taxcorpus load-docs --input data/interpretations   # -> таблицы
 
 # краулер писем ФНС, обязательных для налоговых органов (nalog.gov.ru, первоисточник,
 # 1 запрос / 2 с, повторный запуск дописывает): статус актуальности, теги по статьям НК:
-python scripts/fetch_fns_letters.py --pages 114          # весь раздел, ~1705 писем
+python scripts/fetch_fns_letters.py --pages 114          # весь раздел: 1690 писем выгружено
 python scripts/fetch_minfin_letters.py                   # письма Минфина по 11 категориям раздела
 python scripts/fetch_court_acts.py                       # пленумы ВАС № 57 и № 53 с arbitr.ru (список в SEED)
+# итог реестра: 1690 писем ФНС + 222 письма Минфина + 2 пленума = 1914 документов, 8711 рёбер interprets
 python -m taxcorpus snapshot --description "…"           # снимок корпуса: счётчики, хеши, коммит (§7)
 
 # HTTP API (слой 7): те же инструменты + /ask; бэкенд по TAXCORPUS_DB, иначе офлайн-корпус
