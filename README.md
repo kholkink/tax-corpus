@@ -32,9 +32,11 @@ src/taxcorpus/
   interpretations.py — реестр писем/пленумов, привязка interprets, get_interpretations,
                   проверка цитат на документы
   embeddings.py — DenseIndex (e5-small, npz-матрица), rrf(); tools.HybridSearch — слияние
+  textract.py   — текст из docx/pdf/xlsx/md/html; workspace.py — дело, файлы, версии, задачи,
+                  инструменты дела; case_session.py — персистентная сессия агента в деле (ask_user)
   api.py        — FastAPI: /units, /search, /resolve, /parameters, /terms, /interpretations,
                   /deadline, /ask
-  cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term / deadline / ask / load-docs / interpretations
+  cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term / deadline / ask / load-docs / interpretations / embed / workspace
 sql/schema.sql  — Act / Edition / Unit / UnitText / Reference / Amendment / Parameter / Term /
                   raw_document / parse_run
 tests/          — pytest: идеализированный формат, формат банка ГАС, валидатор, нормализация
@@ -143,6 +145,15 @@ python -m taxcorpus snapshot --description "…"           # снимок кор
 
 # HTTP API (слой 7): те же инструменты + /ask; бэкенд по TAXCORPUS_DB, иначе офлайн-корпус
 pip install -e ".[api]" && uvicorn taxcorpus.api:app --reload   # /docs — OpenAPI
+
+# рабочее пространство дела (docs/workspace-plan.md): папка с файлами юриста (inbox/, notes/)
+# и агента (research/, drafts/ с версиями и шапкой провенанса), сессии с паузой на вопрос
+# юристу (ask_user), задачи; пример — workspaces/demo:
+python -m taxcorpus workspace new --slug delo1 --title "Проверка ООО …" --client "ООО …" --as-of 2026-09-10
+python -m taxcorpus workspace add --slug delo1 акт.docx требование.pdf     # -> inbox/
+python -m taxcorpus workspace chat --slug delo1                              # REPL: /files /tasks /quit
+python -m taxcorpus workspace chat --slug delo1 --message "Подготовь позицию по notes/задача.md"
+python -m taxcorpus workspace chat --slug delo1 --session <id> --message "ответ на вопрос агента"
 
 # оценка агента на эталоне (метрики §6 плана: citation precision/recall, hallucination
 # rate, temporal correctness, abstention; каждый вопрос — платный запрос к модели):

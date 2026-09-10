@@ -100,3 +100,10 @@ def test_search_interpretations_offline():
     assert all(r["date"] <= "2026-09-10" for r in rows)
     out, err = execute_tool(corpus, "search_interpretations", {"query": "камеральная"}, "2026-09-10")
     assert not err and "fns-2024" in out
+
+
+def test_doc_citation_does_not_cross_sentence():
+    idx = InterpretationIndex([LETTER], UnitIndexStub())
+    checks = idx.verify_doc_citations(
+        "…действия за его пределами незаконны. Письмо ФНС от 11.03.2024 № БС-4-11/2702@ — статус outdated.")
+    assert len(checks) == 1 and checks[0]["raw"].startswith("Письмо ФНС")
