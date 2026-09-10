@@ -392,6 +392,77 @@ def audit(req: AuditRequest) -> dict:
     return _run_audit(text, source, req.as_of, req.doc_date)
 
 
+# --- факты и таймлайн дела (F6) -------------------------------------------------------------
+class FactCreate(BaseModel):
+    kind: str = Field(pattern="^(date|amount|party|event|period|regime|other)$")
+    value: str
+    text: str
+    source_path: str | None = None
+    quote: str | None = None
+    page: int | None = None
+    role: str | None = None
+    extracted_by: str = Field("lawyer", pattern="^(lawyer|agent)$")
+
+
+@app.get("/workspaces/{slug}/facts")
+def list_facts(slug: str, kind: str | None = None, confirmed: bool | None = None) -> dict:
+    from .facts import FactStore
+    store = FactStore(_ws(slug))
+    return {"facts": store.list(kind=kind, confirmed=confirmed), "timeline": store.timeline()}
+
+
+@app.post("/workspaces/{slug}/facts", status_code=201)
+def add_fact(slug: str, req: FactCreate) -> dict:
+    from .facts import FactError, FactStore
+    ws = _ws(slug)
+    try:
+        fact = FactStore(ws).add(req.kind, req.value, req.text, req.source_path, req.quote, req.page, req.role,
+                                 extracted_by=req.extracted_by)
+    except FactError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    _sync(ws)
+    return fact.to_dict()
+
+
+@app.post("/workspaces/{slug}/facts/{fact_id}/confirm")
+def confirm_fact(slug: str, fact_id: int, confirmed: bool = True) -> dict:
+    from .facts import FactError, FactStore
+    ws = _ws(slug)
+    try:
+        fact = FactStore(ws).confirm(fact_id, confirmed)
+    except FactError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    _sync(ws)
+    return fact.to_dict()
+
+
+@app.delete("/workspaces/{slug}/facts/{fact_id}")
+def delete_fact(slug: str, fact_id: int) -> dict:
+    from .facts import FactError, FactStore
+    ws = _ws(slug)
+    try:
+        FactStore(ws).remove(fact_id)
+    except FactError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    _sync(ws)
+    return {"deleted": fact_id}
+
+
+@app.get("/workspaces/{slug}/timeline")
+def timeline(slug: str, confirmed_only: bool = False) -> list[dict]:
+    from .facts import FactStore
+    return FactStore(_ws(slug)).timeline(confirmed_only)
+
+
+@app.post("/workspaces/{slug}/deadlines")
+def derive_deadlines(slug: str, confirmed_only: bool = False, create_tasks: bool = True) -> dict:
+    from .facts import FactStore
+    ws = _ws(slug)
+    out = FactStore(ws).derive_deadlines(ProductionCalendar.load(), confirmed_only, create_tasks)
+    _sync(ws)
+    return out
+
+
 class WorkspaceAudit(BaseModel):
     path: str
     doc_date: date | None = None

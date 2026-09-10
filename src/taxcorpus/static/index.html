@@ -53,7 +53,7 @@
 <body>
 <header>
   <h1>tax-corpus · рабочее пространство юриста</h1>
-  <nav><button class="secondary" id="tab-case">Дело</button> <button class="secondary" id="tab-audit">Аудит документа</button></nav>
+  <nav><button class="secondary" id="tab-case">Дело</button> <button class="secondary" id="tab-facts">Факты и таймлайн</button> <button class="secondary" id="tab-audit">Аудит документа</button></nav>
   <span class="meta" id="backend"></span>
   <span class="meta" id="ws-meta"></span>
 </header>
@@ -114,6 +114,32 @@
     mark.audit.partial { background:#fef3c7; } mark.audit.external { background:#e5e7eb; }
     table.audit { border-collapse:collapse; width:100%; font-size:13px; margin-top:10px; }
     table.audit td, table.audit th { border:1px solid var(--line); padding:4px 6px; vertical-align:top; }
+  </style>
+</section>
+<section id="facts-view" hidden style="padding:16px; overflow:auto; grid-column: 1 / -1;">
+  <h2>Факты дела: каждый — с файлом-источником и дословной цитатой; агент предлагает, юрист подтверждает</h2>
+  <div class="status" id="facts-summary" style="margin:6px 0"></div>
+  <div id="facts-table"></div>
+  <h3>Добавить факт (юрист)</h3>
+  <form id="fact-new" style="display:grid; grid-template-columns: 120px 1fr 1fr 180px 140px 120px; gap:6px; max-width:1100px; align-items:end">
+    <select name="kind"><option value="date">дата</option><option value="event">событие</option><option value="amount">сумма</option><option value="period">период</option><option value="party">сторона</option><option value="regime">режим</option><option value="other">другое</option></select>
+    <input name="value" placeholder="значение: 20.03.2026 / 1 200 000 руб. / 2024" required>
+    <input name="text" placeholder="подпись: получен акт проверки" required>
+    <select name="role"><option value="">роль: нет</option><option value="act_received">получен акт (act_received)</option><option value="decision_received">вручено решение</option><option value="decision_date">вынесено решение</option><option value="complaint_decision_date">решение по жалобе</option><option value="tax_due">срок уплаты</option><option value="tax_paid">дата уплаты</option><option value="offense">день нарушения</option><option value="period_end">конец периода</option><option value="check_started">начало проверки</option><option value="check_ended">конец проверки</option></select>
+    <input name="source_path" placeholder="файл (необязательно)">
+    <button>Добавить</button>
+    <input name="quote" placeholder="дословная цитата из файла (если указан файл)" style="grid-column: 1 / -1">
+  </form>
+  <h3>Таймлайн <button class="secondary" id="deadlines-run" style="padding:2px 8px">Рассчитать сроки → задачи</button></h3>
+  <div id="timeline"></div>
+  <div id="deadlines" class="msg agent" style="max-width:1000px; margin-top:10px" hidden></div>
+  <style>
+    .tl { border-left:2px solid var(--line); margin-left:8px; padding-left:14px; }
+    .tl div { position:relative; margin-bottom:8px; } .tl div::before { content:''; position:absolute; left:-19px; top:6px; width:8px; height:8px; border-radius:50%; background:#2563eb; }
+    .tl div.unconfirmed::before { background:#f59e0b; }
+    table.facts { border-collapse:collapse; width:100%; font-size:13px; }
+    table.facts td, table.facts th { border:1px solid var(--line); padding:4px 6px; vertical-align:top; }
+    table.facts tr.unconfirmed td { background:#fffbeb; }
   </style>
 </section>
 <dialog id="unit-dialog"><h3 id="unit-title"></h3><div class="status" id="unit-meta"></div><pre id="unit-text"></pre><form method="dialog"><button>Закрыть</button></form></dialog>
@@ -234,10 +260,41 @@ $('upload').onchange = async e => {
 // --- аудит документа ---
 const caseEls = ['ws-list','messages'].map(id => $(id).closest('aside, section'));
 function showTab(name) {
-  document.querySelectorAll('main > aside, main > section.chat').forEach(el => el.hidden = (name === 'audit'));
-  $('audit-view').hidden = (name !== 'audit');
+  document.querySelectorAll('main > aside, main > section.chat').forEach(el => el.hidden = (name !== 'case'));
+  $('audit-view').hidden = (name !== 'audit'); $('facts-view').hidden = (name !== 'facts');
+  if (name === 'facts') loadFacts();
 }
-$('tab-case').onclick = () => showTab('case'); $('tab-audit').onclick = () => showTab('audit');
+$('tab-case').onclick = () => showTab('case'); $('tab-audit').onclick = () => showTab('audit'); $('tab-facts').onclick = () => showTab('facts');
+// --- факты и таймлайн (F6) ---
+const KIND = {date:'дата', event:'событие', amount:'сумма', period:'период', party:'сторона', regime:'режим', other:'другое'};
+async function loadFacts() {
+  if (!state.slug) { $('facts-summary').textContent = 'выберите дело на вкладке «Дело»'; return; }
+  const r = await api(`/workspaces/${state.slug}/facts`);
+  const unconfirmed = r.facts.filter(f => !f.confirmed).length;
+  $('facts-summary').textContent = `фактов: ${r.facts.length}, ждут подтверждения: ${unconfirmed}`;
+  $('facts-table').innerHTML = r.facts.length ? '<table class="facts"><tr><th>#</th><th>вид</th><th>значение</th><th>подпись</th><th>роль</th><th>источник</th><th>цитата</th><th>кто</th><th></th></tr>' +
+    r.facts.map(f => `<tr class="${f.confirmed?'':'unconfirmed'}"><td>${f.fact_id}</td><td>${KIND[f.kind]||f.kind}</td><td>${esc(String(f.value))}</td><td>${esc(f.text)}</td><td>${esc(f.role||'')}</td><td>${esc(f.source_path||'')}${f.page?' с. '+f.page:''}</td><td><small>${esc(f.quote||'')}</small></td><td>${f.extracted_by==='agent'?'агент':'юрист'}</td><td style="white-space:nowrap">${f.confirmed?'✓ подтверждён':`<button class="secondary" data-confirm="${f.fact_id}" style="padding:2px 6px">подтвердить</button>`} <button class="secondary" data-del="${f.fact_id}" style="padding:2px 6px">✕</button></td></tr>`).join('') + '</table>' : '<div class="status">фактов нет: попросите агента извлечь факты из документов или добавьте вручную</div>';
+  document.querySelectorAll('[data-confirm]').forEach(b => b.onclick = async () => { await api(`/workspaces/${state.slug}/facts/${b.dataset.confirm}/confirm`, {method:'POST'}); loadFacts(); });
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => { if (confirm('удалить факт #' + b.dataset.del + '?')) { await api(`/workspaces/${state.slug}/facts/${b.dataset.del}`, {method:'DELETE'}); loadFacts(); } });
+  $('timeline').innerHTML = r.timeline.length ? '<div class="tl">' + r.timeline.map(t => `<div class="${t.confirmed?'':'unconfirmed'}"><b>${t.date}${t.end?' — '+t.end:''}</b> ${esc(t.text)}${t.role?` <span class="status">(${t.role})</span>`:''}${t.source_path?` <small class="status">· ${esc(t.source_path)}</small>`:''}</div>`).join('') + '</div>' : '<div class="status">нет дат и событий</div>';
+}
+$('fact-new').onsubmit = async e => {
+  e.preventDefault(); const f = new FormData(e.target);
+  const payload = {kind:f.get('kind'), value:f.get('value'), text:f.get('text'), role:f.get('role')||null, source_path:f.get('source_path')||null, quote:f.get('quote')||null, extracted_by:'lawyer'};
+  try { await api(`/workspaces/${state.slug}/facts`, {method:'POST', body: JSON.stringify(payload)}); e.target.reset(); loadFacts(); } catch (err) { alert(err.message); }
+};
+$('deadlines-run').onclick = async () => {
+  try {
+    const r = await api(`/workspaces/${state.slug}/deadlines`, {method:'POST'});
+    $('deadlines').hidden = false;
+    $('deadlines').innerHTML = (r.deadlines.length ? '<b>Сроки:</b><ul>' + r.deadlines.map(d => `<li>${esc(d.title)} — до <b>${d.due}</b></li>`).join('') + '</ul>' : '') +
+      (r.limitation ? `<b>Давность (ст. 113):</b> три года истекают ${r.limitation.limitation_ends}; решение ${r.limitation.decision_date} — ${r.limitation.expired ? '<span style="color:#b91c1c">за пределами срока</span>' : 'в пределах срока'}<br>` : '') +
+      (r.steps.length ? '<details><summary>расчёт</summary><pre>' + esc(r.steps.join('\n')) + '</pre></details>' : '') +
+      (r.missing.length ? '<div class="status">не хватает: ' + esc(r.missing.join('; ')) + '</div>' : '') +
+      (r.tasks.length ? `<div class="status">поставлено задач: ${r.tasks.length}</div>` : '') +
+      (r.warnings.length ? '<div class="status">' + esc(r.warnings.join('; ')) + '</div>' : '');
+  } catch (e) { alert(e.message); }
+};
 $('audit-upload-btn').onclick = () => $('audit-upload').click();
 let auditFile = null;
 $('audit-upload').onchange = e => { auditFile = e.target.files[0] || null; if (auditFile) $('audit-text').placeholder = 'файл: ' + auditFile.name; };
