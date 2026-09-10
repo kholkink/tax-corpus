@@ -163,8 +163,10 @@ CREATE TABLE IF NOT EXISTS term (
     term_norm          TEXT NOT NULL,             -- нижний регистр, ё -> е
     definition         TEXT NOT NULL,
     definition_unit_id TEXT NOT NULL REFERENCES unit(unit_id),
-    scope              TEXT NOT NULL DEFAULT 'code', -- code | chapter | article
+    scope              TEXT NOT NULL DEFAULT 'code', -- code | chapter | article | point
+    scope_unit_id      TEXT REFERENCES unit(unit_id), -- глава/статья, в пределах которой действует
     valid_from         DATE,
     valid_to           DATE
 );
+ALTER TABLE term ADD COLUMN IF NOT EXISTS scope_unit_id TEXT REFERENCES unit(unit_id);
 CREATE INDEX IF NOT EXISTS idx_term_norm ON term(term_norm);

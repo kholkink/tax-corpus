@@ -20,8 +20,10 @@ src/taxcorpus/
   amendments.py — атомарные правки из пометок редакции (словесные даты, латинская «N»)
   db.py         — загрузка в PostgreSQL (idempotent), get_unit / search_units /
                   get_parameter / find_terms (инструменты слоя 5)
-  terms.py      — термины ст. 11 НК («термин - определение») -> таблица term
-  cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term
+  terms.py      — термины: ст. 11 и отраслевые словари («в целях настоящей главы …
+                  понятия:») с областью действия -> таблица term
+  deadlines.py  — compute_deadline по ст. 6.1 (п. 2–8), производственный календарь
+  cli.py        — CLI: convert / parse / load / ingest / unit / search / diff / param / term / deadline
 sql/schema.sql  — Act / Edition / Unit / UnitText / Reference / Amendment / Parameter / Term /
                   raw_document / parse_run
 tests/          — pytest: идеализированный формат, формат банка ГАС, валидатор, нормализация
@@ -86,8 +88,12 @@ python -m taxcorpus diff --id nk1.ch1.art6-1 --since 2000-01-01
 # data/parameters/parameters_v0.json — каждое значение подтверждено якорем в тексте):
 python -m taxcorpus param --name vat_rate_general --as-of 2026-09-10
 
-# определение термина из ст. 11 НК:
+# определение термина (ст. 11 НК и отраслевые словари с областью действия):
 python -m taxcorpus term --term "индивидуальн"
+
+# срок по ст. 6.1 НК: каждая операция расчёта — со ссылкой на пункт статьи
+# (дни — рабочие, --calendar-days для календарных; переносы выходных — data/calendar/<год>.json):
+python -m taxcorpus deadline --start 2025-03-20 --amount 3 --unit months
 
 # отчёт по частично разрешённым ссылкам (очередь сверки):
 python scripts/report_partial.py

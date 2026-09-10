@@ -378,11 +378,12 @@ def load_terms(conn, rows: list[dict], act_id: int, valid_from: date | None = No
         with conn.cursor() as cur:
             cur.executemany(
                 """
-                INSERT INTO term (term, term_norm, definition, definition_unit_id, scope, valid_from)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO term (term, term_norm, definition, definition_unit_id, scope,
+                                  scope_unit_id, valid_from)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
                 [(t["term"], t["term_norm"], t["definition"], t["definition_unit_id"],
-                  t.get("scope", "code"), valid_from) for t in rows],
+                  t.get("scope", "code"), t.get("scope_unit_id"), valid_from) for t in rows],
             )
     return len(rows)
 
@@ -392,12 +393,12 @@ def find_terms(conn, query: str, as_of_date: str) -> list[dict]:
     norm = query.lower().replace("ё", "е")
     return conn.execute(
         """
-        SELECT t.term, t.definition, t.definition_unit_id, t.scope, u.label
+        SELECT t.term, t.definition, t.definition_unit_id, t.scope, t.scope_unit_id, u.label
         FROM term t JOIN unit u ON u.unit_id = t.definition_unit_id
         WHERE t.term_norm LIKE %s
           AND (t.valid_from IS NULL OR t.valid_from <= %s)
           AND (t.valid_to IS NULL OR t.valid_to > %s)
-        ORDER BY length(t.term), t.term
+        ORDER BY (t.scope = 'code') DESC, length(t.term), t.term
         """,
         (f"%{norm}%", as_of_date, as_of_date),
     ).fetchall()
