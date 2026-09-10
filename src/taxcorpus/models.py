@@ -71,7 +71,8 @@ class Unit:
     unit_id: str = ""
     parent_unit_id: str | None = None
     label: str = ""
-    edit_note: str | None = None  # «(в ред. Федерального закона от ...)»
+    edit_note: str | None = None  # «(в ред. Федерального закона от ...)»; несколько — через \n
+    notes: list[tuple[int, str]] = field(default_factory=list)  # (после какого абзаца, пометка)
     duplicate_of: str | None = None  # канонический ID, если ID совпал с ранее встреченным
     paren_point: bool = False  # пункт, поданный маркером «N)» прямо под статьёй (ст. 217 НК)
     inferred: bool = False  # единица синтезирована парсером (потерянный банком маркер «1.»)

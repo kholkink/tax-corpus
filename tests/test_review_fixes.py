@@ -8,7 +8,7 @@
 6. Валидатор не ругается на статью из одних пунктов и на отменённую единицу.
 """
 
-from taxcorpus.amendments import (amendments_from_note, effective_date_of, operation_of,
+from taxcorpus.amendments import (amendments_from_note, amendments_from_records, effective_date_of, operation_of,
                                   repeal_dates, scope_of)
 from taxcorpus.parser import parse_document
 from taxcorpus.references import extract_references
@@ -274,3 +274,49 @@ def test_range_without_spaces_vs_dashed_number():
     assert [r["target"]["article"] for r in recs][:3] == ["254", "255", "256"] and len(recs) == 16
     recs = extract_references("u", "согласно статье 3334-1 настоящего Кодекса")
     assert [r["target"]["article"] for r in recs] == ["3334-1"]
+
+
+PARAGRAPH_NOTES = """Статья 12. Тест
+
+1. Первый абзац.
+
+<Абзац в ред. Федерального закона от 27 июля 2006 г. N 137-ФЗ>
+
+Второй абзац.
+
+<Абзац введен Федеральным законом от 08 августа 2024 N 259-ФЗ (изменения вступают в силу с 1 января 2025 г.)>
+
+Третий абзац.
+
+<Абзац первый утратил силу с 1 января 2020 г.: Федеральный закон от 29 сентября 2019 N 325-ФЗ>
+
+<В ред. Федерального закона от 23 ноября 2020 N 374-ФЗ>
+
+2. Пункт два:
+
+1) один;
+
+<Абзац третий утратил силу: Федеральный закон от 31 июля 2023 N 389-ФЗ>
+"""
+
+
+def test_paragraph_notes_move_to_paragraph_units():
+    recs = _records(PARAGRAPH_NOTES)
+    by_id = {r["unit_id"]: r for r in recs}
+    assert by_id["nk1.art12.p1.ab1"]["edit_note"] == (
+        "<Абзац в ред. Федерального закона от 27 июля 2006 г. N 137-ФЗ>\n"
+        "<Абзац первый утратил силу с 1 января 2020 г.: Федеральный закон от 29 сентября 2019 N 325-ФЗ>")
+    assert by_id["nk1.art12.p1.ab2"]["edit_note"].startswith("<Абзац введен")
+    assert by_id["nk1.art12.p1.ab3"]["edit_note"] is None
+    # на пункте остаётся только пометка о самом пункте
+    assert by_id["nk1.art12.p1"]["edit_note"] == "<В ред. Федерального закона от 23 ноября 2020 N 374-ФЗ>"
+    # пометка после «1) один;» по грамматике принадлежит подпункту; «абзац третий»
+    # не его собственный абзац — остаётся на подпункте как child-scope
+    assert by_id["nk1.art12.p2.sp1"]["edit_note"].startswith("<Абзац третий утратил силу")
+    # амендменты: отмена абзаца — scope unit для самого абзаца, интервал закрывается
+    rows = amendments_from_records(recs)
+    ab1 = [r for r in rows if r["target_unit_id"] == "nk1.art12.p1.ab1"]
+    assert [(r["operation"], r["scope"]) for r in ab1] == [("replace", "unit"), ("repeal", "unit")]
+    assert repeal_dates(rows) == {"nk1.art12.p1.ab1": "2020-01-01"}
+    sp1 = [r for r in rows if r["target_unit_id"] == "nk1.art12.p2.sp1"]
+    assert sp1[0]["scope"] == "child"

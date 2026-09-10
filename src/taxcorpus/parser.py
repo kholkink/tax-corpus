@@ -181,8 +181,31 @@ def _extract_title(unit_kind: str, remainder: str, blocks: list[str],
 def _add_edit_note(unit: Unit, note: str, stats: ParseStats) -> None:
     """Пометки редакции накапливаются (одна единица может иметь несколько),
     разделитель — перевод строки; amendments.py разбирает их по отдельности."""
-    unit.edit_note = f"{unit.edit_note}\n{note}" if unit.edit_note else note
+    unit.notes.append((len(unit.paragraphs), note))
+    unit.edit_note = "\n".join(n for _, n in unit.notes)
     stats.edition_notes += 1
+
+
+RE_PARAGRAPH_NOTE = re.compile(r"^<\s*абзац\w*\s+(\S+)(?:\s+(\S+))?", re.IGNORECASE)
+
+
+def _paragraph_note_target(note: str, position: int, paragraph_count: int) -> int | None:
+    """Пометка об абзаце -> номер собственного абзаца единицы (1-based) или None.
+
+    «<Абзац пятый утратил силу …>» — по порядковому; «<Абзац введен …>» — абзац,
+    после которого стоит пометка. Порядковый за пределами собственных абзацев
+    (юридический счёт включает строки подпунктов) — остаётся на единице.
+    """
+    m = RE_PARAGRAPH_NOTE.match(note)
+    if not m:
+        return None
+    from .references import _ordinal_value
+    ordinal = _ordinal_value(m.group(1))
+    if ordinal is None and m.group(2):
+        ordinal = _ordinal_value(f"{m.group(1)} {m.group(2)}")
+    if ordinal is not None:
+        return ordinal if 1 <= ordinal <= paragraph_count else None
+    return position if 1 <= position <= paragraph_count else None
 
 
 def parse_code(raw_text: str, act_code: str = "nk1") -> tuple[Unit, ParseStats]:
@@ -334,6 +357,19 @@ def _attach_paragraph_units(root: Unit) -> None:
                 Unit(kind="paragraph", number=str(idx + 1), paragraphs=[p])
                 for idx, p in enumerate(unit.paragraphs)
             ]
+            # пометки об абзацах переезжают на сами абзацы: у них свой интервал действия
+            kept: list[tuple[int, str]] = []
+            for position, note in unit.notes:
+                target = _paragraph_note_target(note, position, len(paragraph_units))
+                if target is None:
+                    kept.append((position, note))
+                else:
+                    paragraph_units[target - 1].notes.append((1, note))
+            for p in paragraph_units:
+                if p.notes:
+                    p.edit_note = "\n".join(n for _, n in p.notes)
+            unit.notes = kept
+            unit.edit_note = "\n".join(n for _, n in kept) or None
             unit.children = paragraph_units + unit.children
 
 

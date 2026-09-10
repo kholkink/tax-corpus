@@ -123,8 +123,14 @@ def effective_date_of(note: str) -> date | None:
 RE_CHILD_SCOPE = re.compile(r"^<?\s*(?:абзац|пункт|подпункт)\w*\s", re.IGNORECASE)
 
 
-def scope_of(note: str) -> str:
-    """'unit' — пометка о самой единице; 'child' — о её абзаце/пункте/подпункте."""
+def scope_of(note: str, unit_kind: str | None = None) -> str:
+    """'unit' — пометка о самой единице; 'child' — о её абзаце/пункте/подпункте.
+
+    Пометка «<Абзац … утратил силу>», привязанная парсером к самому абзацу
+    (unit_kind == paragraph), — о самой единице.
+    """
+    if unit_kind == "paragraph" and re.match(r"^<?\s*абзац", note, re.IGNORECASE):
+        return "unit"
     return "child" if RE_CHILD_SCOPE.match(note) else "unit"
 
 
@@ -140,7 +146,7 @@ def operation_of(note: str) -> str | None:
     return best[2] if best else None
 
 
-def amendments_from_note(unit_id: str, note: str | None) -> list[dict]:
+def amendments_from_note(unit_id: str, note: str | None, unit_kind: str | None = None) -> list[dict]:
     """edit_note единицы -> список правок (по одному на каждый закон каждой пометки).
 
     Единица может нести несколько пометок (разделитель — перевод строки, см.
@@ -157,7 +163,7 @@ def amendments_from_note(unit_id: str, note: str | None) -> list[dict]:
         for number, law_date, effective in law_entries(single):
             rows.append({
                 "target_unit_id": unit_id,
-                "scope": scope_of(single),
+                "scope": scope_of(single, unit_kind),
                 "operation": operation,
                 "amending_act_number": number,
                 "amending_act_date": law_date or None,
@@ -171,7 +177,8 @@ def amendments_from_records(records: list[dict]) -> list[dict]:
     """Все единицы -> все правки (порядок документа)."""
     out: list[dict] = []
     for record in records:
-        out.extend(amendments_from_note(record["unit_id"], record.get("edit_note")))
+        out.extend(amendments_from_note(record["unit_id"], record.get("edit_note"),
+                                        record.get("kind")))
     return out
 
 
