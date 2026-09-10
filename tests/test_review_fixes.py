@@ -260,3 +260,17 @@ def test_paragraph_counts_subpoint_lines():
     assert r.unit_id == "nk1.art10.p2.ab1"
     r = index.resolve_reference({"type": "unit", "point": "2", "paragraph_ordinal": 9}, "nk1.art10.p1")
     assert r.status == "partial"
+
+
+def test_dashed_number_is_not_a_range():
+    recs = extract_references("u", "абзацем первым пункта 2.1 статьи 2843-1 настоящего Кодекса")
+    assert [r["target"]["article"] for r in recs] == ["2843-1"]
+    recs = extract_references("u", "пунктах 2 - 18 части первой статьи 30 Федерального закона")
+    assert recs and {r["kind"] for r in recs} == {"external_act_unit"}
+
+
+def test_range_without_spaces_vs_dashed_number():
+    recs = extract_references("u", "в порядке, установленном статьями 254-269 настоящего Кодекса")
+    assert [r["target"]["article"] for r in recs][:3] == ["254", "255", "256"] and len(recs) == 16
+    recs = extract_references("u", "согласно статье 3334-1 настоящего Кодекса")
+    assert [r["target"]["article"] for r in recs] == ["3334-1"]
