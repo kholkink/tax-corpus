@@ -172,6 +172,23 @@ class InterpretationIndex:
                         "excerpt": d.text[:600]})
         return out
 
+    def search(self, query: str, as_of: str, limit: int = 5) -> list[dict]:
+        """Грубый офлайн-поиск по документам (совпадение основ слов; заголовок весомее)."""
+        stems = {w.lower().replace("ё", "е")[:5] for w in re.findall(r"[а-яёa-z0-9]+", query.lower())
+                 if len(w) > 2}
+        scored = []
+        for d in self.docs.values():
+            if d.date > as_of:
+                continue
+            title_words = {w.lower().replace("ё", "е")[:5] for w in re.findall(r"[а-яёa-z0-9]+", d.title.lower())}
+            text_words = {w.lower().replace("ё", "е")[:5] for w in re.findall(r"[а-яёa-z0-9]+", d.text.lower())}
+            score = 2 * len(stems & title_words) + len(stems & text_words)
+            if score:
+                scored.append((score, d))
+        scored.sort(key=lambda x: (-x[0], x[1].date), reverse=False)
+        return [{**d.summary(), "rank": s, "snippet": d.text[:300], "approximate": True}
+                for s, d in scored[:limit]]
+
     def verify_doc_citations(self, text: str) -> list[dict]:
         """Ссылки на письма/постановления в ответе -> [{raw, number, date, status}];
         status ok — документ есть в реестре; unknown — нет (агент не имел права цитировать)."""

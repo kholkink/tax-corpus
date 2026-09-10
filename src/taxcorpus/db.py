@@ -415,11 +415,13 @@ def load_documents_db(conn, docs: list, edges: list[dict]) -> int:
                 cur.execute(
                     """
                     INSERT INTO document (doc_id, kind, agency, number, doc_date, title, text,
-                                          source_url, mandatory, retrieved_at, sha256)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                          source_url, mandatory, retrieved_at, sha256,
+                                          status, category, tags)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (d.doc_id, d.kind, d.agency, d.number, d.date, d.title, d.text,
-                     d.source_url, d.mandatory, d.retrieved_at, d.sha256),
+                     d.source_url, d.mandatory, d.retrieved_at, d.sha256,
+                     d.status, d.category, Json(d.tags or [])),
                 )
             cur.executemany(
                 """
@@ -440,7 +442,7 @@ def get_interpretations(conn, unit_id: str, as_of_date: str, limit: int = 10) ->
     rows = conn.execute(
         """
         SELECT d.doc_id, d.kind, d.agency, d.number, d.doc_date AS date, d.title, d.mandatory,
-               d.source_url, left(d.text, 600) AS excerpt,
+               d.status, d.category, d.tags, d.source_url, left(d.text, 600) AS excerpt,
                array_agg(DISTINCT r.raw_citation) AS cites
         FROM document d JOIN doc_reference r ON r.doc_id = d.doc_id
         WHERE (r.to_unit_id = %s OR r.to_unit_id LIKE %s OR %s LIKE r.to_unit_id || '.%%'
@@ -452,3 +454,27 @@ def get_interpretations(conn, unit_id: str, as_of_date: str, limit: int = 10) ->
     ).fetchall()
     rows.sort(key=lambda r: (PRIORITY.get(r["kind"], 9), not r["mandatory"], str(r["date"])))
     return rows[:limit]
+
+
+def search_documents(conn, query: str, as_of_date: str, limit: int = 5) -> list[dict]:
+    """Поиск по разъяснениям (отдельный индекс, слой 4): заголовок весомее текста."""
+    expansions = expand_query(query)
+    return conn.execute(
+        """
+        SELECT d.doc_id, d.kind, d.agency, d.number, d.doc_date AS date, d.title, d.mandatory,
+               d.status, d.category, d.tags, d.source_url,
+               GREATEST(ts_rank(d.search_vector, q),
+                        COALESCE((SELECT max(ts_rank(d.search_vector, phraseto_tsquery('russian', e.phrase)))
+                                  FROM unnest(%s::text[]) AS e(phrase)), 0)) AS rank,
+               ts_headline('russian', d.text, q,
+                           'MaxWords=40, MinWords=15, StartSel=«, StopSel=», MaxFragments=2') AS snippet
+        FROM document d, websearch_to_tsquery('russian', %s) q
+        WHERE (d.search_vector @@ q
+            OR EXISTS (SELECT 1 FROM unnest(%s::text[]) AS e(phrase)
+                       WHERE d.search_vector @@ phraseto_tsquery('russian', e.phrase)))
+          AND d.doc_date <= %s
+        ORDER BY rank DESC, d.doc_date DESC
+        LIMIT %s
+        """,
+        (expansions, query, expansions, as_of_date, limit),
+    ).fetchall()

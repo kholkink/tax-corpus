@@ -32,6 +32,7 @@ class Corpus(Protocol):
     def get_parameter(self, name: str, as_of: str) -> dict | None: ...
     def find_terms(self, query: str, as_of: str) -> list[dict]: ...
     def get_interpretations(self, unit_id: str, as_of: str, limit: int) -> list[dict]: ...
+    def search_interpretations(self, query: str, as_of: str, limit: int) -> list[dict]: ...
     def verifier(self) -> CitationVerifier: ...
     def interpretations(self) -> InterpretationIndex: ...
 
@@ -98,6 +99,9 @@ class LocalCorpus:
 
     def get_interpretations(self, unit_id: str, as_of: str, limit: int = 10) -> list[dict]:
         return self._interpretations.get_interpretations(unit_id, as_of, limit)
+
+    def search_interpretations(self, query: str, as_of: str, limit: int = 5) -> list[dict]:
+        return self._interpretations.search(query, as_of, limit)
 
     def _interval(self, unit_id: str) -> tuple[str | None, str | None]:
         return self._verifier.interval(unit_id)
@@ -198,6 +202,9 @@ class DbCorpus:
 
     def get_interpretations(self, unit_id: str, as_of: str, limit: int = 10) -> list[dict]:
         return self.db.get_interpretations(self.conn, unit_id, as_of, limit)
+
+    def search_interpretations(self, query: str, as_of: str, limit: int = 5) -> list[dict]:
+        return self.db.search_documents(self.conn, query, as_of, limit)
 
 
 # --- описания инструментов для function calling --------------------------------------
@@ -302,6 +309,22 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "strict": True,
     },
     {
+        "name": "search_interpretations",
+        "description": "Поиск по разъяснениям (письма ФНС/Минфина, пленумы) по теме, а не по номеру "
+                       "статьи: заголовок и текст. Возвращает номер, дату, статус актуальности, "
+                       "теги по статьям НК. Дальше — get_interpretations по найденной норме.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 20, "default": 5},
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
         "name": "compute_deadline",
         "description": "Срок по ст. 6.1 НК от даты события: дни (рабочие или календарные), "
                        "месяцы, кварталы, годы; учитывает перенос с выходного. Возвращает дату "
@@ -342,6 +365,8 @@ def execute_tool(corpus: Corpus, name: str, args: dict, as_of: str,
                 result = {"name": args["name"], "found": False}
         elif name == "find_terms":
             result = corpus.find_terms(args["query"], as_of)
+        elif name == "search_interpretations":
+            result = corpus.search_interpretations(args["query"], as_of, int(args.get("limit") or 5))
         elif name == "get_interpretations":
             result = corpus.get_interpretations(args["unit_id"], as_of, int(args.get("limit") or 5))
             if not result:
