@@ -46,7 +46,7 @@ def main() -> int:
         corpus = DbCorpus(conn, ROOT / "data" / "processed")
     agent = TaxAgent(client, corpus, model=args.model, effort=args.effort)
 
-    questions = [q for q in GOLDEN["questions"] if q["kind"] == "search"]
+    questions = [q for q in GOLDEN["questions"] if q["kind"] in ("search", "agent", "agent_abstain")]
     if args.limit:
         questions = questions[: args.limit]
 
@@ -58,7 +58,8 @@ def main() -> int:
             result = agent.ask(q["question"], args.as_of)
             checks = [c.__dict__ for c in result.verification.checks]
             score = score_answer(q["id"], q["expected"], result.answer, checks,
-                                 reworked=result.reworked, tool_calls=len(result.tool_calls))
+                                 reworked=result.reworked, tool_calls=len(result.tool_calls),
+                                 expected_abstain=q["kind"] == "agent_abstain")
             summary.scores.append(score)
             runs.append({"question": q, "result": result.to_dict(), "score": score.__dict__})
             print(f"    P/R unit {score.precision_unit}/{score.recall_unit}, "

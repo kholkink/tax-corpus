@@ -478,3 +478,32 @@ def search_documents(conn, query: str, as_of_date: str, limit: int = 5) -> list[
         """,
         (expansions, query, expansions, as_of_date, limit),
     ).fetchall()
+
+
+# --- §7: снимки корпуса -------------------------------------------------------------
+
+def create_snapshot(conn, description: str | None = None, git_commit: str | None = None) -> dict:
+    """Фиксирует состояние БД: счётчики таблиц, акты с хешами источников и датами редакций,
+    число документов по ведомствам. Юристу показывается номер снимка и дата актуальности."""
+    counts = {}
+    for table in ("unit", "unit_text", "reference", "amendment", "parameter", "term",
+                  "document", "doc_reference"):
+        counts[table] = conn.execute(f"SELECT count(*) AS n FROM {table}").fetchone()["n"]
+    acts = conn.execute(
+        """
+        SELECT a.act_code, a.source_sha256, a.retrieved_at, e.valid_from
+        FROM act a LEFT JOIN edition e ON e.act_id = a.act_id ORDER BY a.act_code
+        """).fetchall()
+    docs = conn.execute(
+        "SELECT agency, kind, count(*) AS n, max(doc_date) AS latest FROM document "
+        "GROUP BY agency, kind ORDER BY agency, kind").fetchall()
+    content = {"counts": counts,
+               "acts": [dict(r) for r in acts],
+               "documents": [dict(r) for r in docs]}
+    row = conn.execute(
+        "INSERT INTO snapshot (description, git_commit, content) VALUES (%s, %s, %s) "
+        "RETURNING snapshot_id, created_at",
+        (description, git_commit, Json(content, dumps=lambda o: __import__("json").dumps(o, default=str))),
+    ).fetchone()
+    conn.commit()
+    return {"snapshot_id": row["snapshot_id"], "created_at": row["created_at"], **content}
