@@ -74,6 +74,7 @@ class Unit:
     edit_note: str | None = None  # «(в ред. Федерального закона от ...)»
     duplicate_of: str | None = None  # канонический ID, если ID совпал с ранее встреченным
     paren_point: bool = False  # пункт, поданный маркером «N)» прямо под статьёй (ст. 217 НК)
+    inferred: bool = False  # единица синтезирована парсером (потерянный банком маркер «1.»)
     children: list["Unit"] = field(default_factory=list)
 
     @property

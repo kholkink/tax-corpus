@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from .models import KIND_RU, Unit, build_label
+from .models import KIND_RU, Unit, build_label, number_key
 from .normalize import normalize_text, split_paragraphs
 
 # --- маркеры структуры (проверяются по началу абзаца) ---
@@ -34,7 +34,9 @@ RE_ARTICLE = re.compile(r"^(?:Статья|СТАТЬЯ)\s+(\d+(?:\.\d+)?(?:-\d+
 RE_SUBPOINT = re.compile(r"^(\d+(?:\.\d+)?(?:-\d+)?)\)\s+(.*)$")
 # после точки пробел может отсутствовать («1.Налогоплательщиками…»), но за точкой
 # не должна идти цифра — иначе это дата или число, а не маркер
-RE_POINT = re.compile(r"^(\d+(?:\.\d+)?(?:-\d+)?)\.(?!\d)\s*(\S.*)$")
+# текст пункта начинается с буквы или пометки «<…>», но не с цифры: «1. 61 53 00; 75 02 00;»
+# в ст. 333.45 — строка таблицы координат, а не пункт
+RE_POINT = re.compile(r"^(\d+(?:\.\d+)?(?:-\d+)?)\.(?!\d)\s*([^\d\s].*)$")
 
 # служебные абзацы-пометки редакции: «(в ред. Федерального закона от ...)»
 # и пометки банка ГАС в угловых скобках: «<В новой ред. ...>», «<Введена ...>»,
@@ -88,6 +90,7 @@ class ParseStats:
     duplicate_suffixes: int = 0  # повторных ID, разрешённых суффиксом «@2»
     title_notes: int = 0  # пометок, отделённых от заголовков глав/статей
     article_level_points: int = 0  # «N)» прямо под статьёй, принятых за пункты
+    inferred_points: int = 0  # синтезированных «п. 1» вместо потерянного банком маркера
     pending_title_note: str | None = None  # служебное: пометка из последнего заголовка
 
 
@@ -110,14 +113,16 @@ def _detokenize(number: str, base: int | None, stats: ParseStats) -> str:
     """
     if base is None:
         return number
-    prefix = str(base)
-    if number.startswith(prefix) and len(number) > len(prefix):
-        rest = number[len(prefix):]
-        # остаток — целое, дефисный или многоточечный номер: «2512-1» -> 25.12-1,
-        # «34625.1» -> 346.25.1 (иначе рвётся цепочка восстановления до конца главы)
-        if re.fullmatch(r"\d+(?:\.\d+)*(?:-\d+)*", rest) and int(re.match(r"\d+", rest).group(0)) >= 1:
-            stats.detokenized += 1
-            return f"{prefix}.{rest}"
+    # префикс — целая часть предыдущей единицы либо следующий номер: после «8)»
+    # идёт «91)» (подп. 9.1 ст. 309, целого «9)» в подаче нет) — это 9.1, а не 91
+    for prefix in (str(base), str(base + 1)):
+        if number.startswith(prefix) and len(number) > len(prefix):
+            rest = number[len(prefix):]
+            # остаток — целое, дефисный или многоточечный номер: «2512-1» -> 25.12-1,
+            # «34625.1» -> 346.25.1 (иначе рвётся цепочка восстановления до конца главы)
+            if re.fullmatch(r"\d+(?:\.\d+)*(?:-\d+)*", rest) and int(re.match(r"\d+", rest).group(0)) >= 1:
+                stats.detokenized += 1
+                return f"{prefix}.{rest}"
     return number
 
 
@@ -288,6 +293,35 @@ def parse_code(raw_text: str, act_code: str = "nk1") -> tuple[Unit, ParseStats]:
     return root, stats
 
 
+def _infer_lost_point_one(root: Unit, stats: ParseStats) -> None:
+    """Банк иногда теряет маркер «1.» (ст. 150 НК): статья начинается вводным абзацем,
+    затем идут «1) … 23)», затем «2. <Утратил силу…>». Если «N)»-пункты статьи
+    предшествуют пункту с точкой и номером > 1, они — подпункты потерянного п. 1:
+    синтезируем его (inferred=True) из вводных абзацев статьи."""
+    for article in root.walk():
+        if article.kind != "article":
+            continue
+        points = [c for c in article.children if c.kind == "point"]
+        paren = [c for c in points if c.paren_point]
+        dotted = [c for c in points if not c.paren_point]
+        if not paren or not dotted:
+            continue
+        first_dotted = dotted[0]
+        if number_key(first_dotted.number) <= (1,) or \
+                article.children.index(paren[0]) > article.children.index(first_dotted):
+            continue
+        inferred = Unit(kind="point", number="1", inferred=True,
+                        paragraphs=list(article.paragraphs))
+        article.paragraphs = []
+        for item in paren:
+            item.kind = "subpoint"
+            item.paren_point = False
+            inferred.children.append(item)
+        article.children = [c for c in article.children if c not in paren]
+        article.children.insert(0, inferred)
+        stats.inferred_points += 1
+
+
 def _attach_paragraph_units(root: Unit) -> None:
     """Собственные абзацы статей/пунктов/подпунктов -> дочерние единицы-абзацы.
 
@@ -403,6 +437,7 @@ def unit_record(node: Unit, act_code: str, path: list[Unit] | None = None) -> di
         "paragraphs": list(node.paragraphs),
         "edit_note": node.edit_note,
         "duplicate_of": node.duplicate_of,
+        "inferred": node.inferred,
     }
 
 
@@ -441,6 +476,7 @@ def flatten(root: Unit, act_code: str) -> list[dict]:
 def parse_document(raw_text: str, act_code: str = "nk1") -> tuple[Unit, list[dict], ParseStats]:
     """Полный проход: нормализация -> дерево -> абзацы -> плоские записи."""
     root, stats = parse_code(raw_text, act_code)
+    _infer_lost_point_one(root, stats)
     _attach_paragraph_units(root)
     records = flatten(root, act_code)
     stats.duplicate_suffixes = sum(1 for r in records if r["duplicate_of"])

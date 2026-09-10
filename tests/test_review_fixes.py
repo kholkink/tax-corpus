@@ -159,3 +159,31 @@ def test_duplicate_marker_does_not_make_number_ambiguous():
     assert any(r["duplicate_of"] == "nk2.art227-1" for r in records)
     index = UnitIndex(records)
     assert resolve_citation("ст. 227.1", index).unit_id == "nk2.art227-1"
+
+
+def test_detokenize_after_gap_uses_next_integer_prefix():
+    text = ("Статья 309. Тест\n\n1. Доходы:\n\n8) восемь;\n\n91) девять-один;\n\n"
+            "95) девять-пять;\n\n10) десять.\n")
+    numbers = [r["number"] for r in _records(text, "nk2") if r["kind"] == "subpoint"]
+    assert numbers == ["8", "9.1", "9.5", "10"]
+
+
+def test_lost_point_one_is_inferred():
+    text = ("Статья 150. Тест\n\nНе подлежит налогообложению ввоз:\n\n1) товаров;\n\n"
+            "2) следующих товаров;\n\n"
+            "2. <Утратил силу с 1 января 2004 г.: Федеральный закон от 07 июля 2003 N 117-ФЗ>\n")
+    by_id = {r["unit_id"]: r for r in _records(text, "nk2")}
+    assert by_id["nk2.art150.p1"]["inferred"] is True
+    assert by_id["nk2.art150.p1"]["text"] == "Не подлежит налогообложению ввоз:"
+    assert "nk2.art150.p1.sp1" in by_id and "nk2.art150.p1.sp2" in by_id
+    assert by_id["nk2.art150.p2"]["edit_note"].startswith("<Утратил силу")
+    assert not any("@" in uid for uid in by_id)
+
+
+def test_coordinate_rows_are_not_points():
+    text = ("Статья 333.45. Тест\n\n1. Объект:\n\n4) участок севернее:\n\n"
+            "1. 61 53 00; 75 02 00;\n\n2. 62 00 00; 75 02 00;\n")
+    recs = _records(text, "nk2")
+    assert [r["number"] for r in recs if r["kind"] == "point"] == ["1"]
+    sp = next(r for r in recs if r["kind"] == "subpoint")
+    assert "61 53 00" in sp["text"]
