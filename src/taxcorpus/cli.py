@@ -183,9 +183,15 @@ def cmd_load(args: argparse.Namespace) -> int:
             if len(rows) < len(seed):
                 print(f"[warn] параметров пропущено {len(seed) - len(rows)}: их единицы-источники "
                       "ещё не загружены (загрузите второй акт и повторите load)", file=sys.stderr)
+        # F2: события перезагрузки (изменённые/исключённые/новые единицы, параметры) -> corpus_event
+        from .db import detect_parameter_changes, record_events
+        events = list(result.get("events") or []) + detect_parameter_changes(conn, result.pop("_old_parameters", None) or {})
+        result["events"] = record_events(conn, events)
     finally:
         conn.close()
 
+    if result.get("events"):
+        print(f"событий мониторинга записано: {result['events']} (jobs run monitor — уведомления делам)")
     print(f"загружено: act_id={result['act_id']}, edition_id={result['edition_id']}, "
           f"units={result['units']}, references={result['references']} "
           f"(отложено {result.get('references_pending', 0)}, дозаполнено "
@@ -559,6 +565,31 @@ def cmd_workspace(args: argparse.Namespace) -> int:
         return 0
     if args.ws_cmd in ("facts", "add-fact", "confirm-fact", "timeline", "deadlines"):
         return _facts(args, ws)
+    if args.ws_cmd in ("notifications", "apply", "changes"):
+        from .db import connect
+        from .monitor import apply_notification, notifications, render_change, set_status, what_changed
+        conn = connect(getattr(args, "db_url", None))
+        try:
+            if args.ws_cmd == "notifications":
+                rows = notifications(conn, args.slug, args.status, 100)
+                for n in rows:
+                    print(f"#{n['notification_id']:<4} {n['status']:7s} {n['kind']:24s} {n['unit_id'] or n['doc_id'] or ''}  "
+                          f"файлы: {', '.join(n['paths'] or [])}")
+                if not rows:
+                    print("уведомлений нет")
+            elif args.ws_cmd == "changes":
+                print(render_change(what_changed(conn, args.unit_id, args.since, ws.manifest.as_of)))
+            else:
+                if args.seen:
+                    print(set_status(conn, args.id, "seen"))
+                    return 0
+                corpus, _conn2 = _open_corpus(args)
+                agent = _make_agent(args, corpus, ws)
+                r = apply_notification(conn, ws, agent, args.id)
+                print(f"сессия {r['session_id']} ({r['status']}), файлы: {', '.join(r['files_written']) or '—'}\n\n{r['text']}")
+        finally:
+            conn.close()
+        return 0
     if args.ws_cmd == "draft":
         from .deadlines import ProductionCalendar
         from .templates import draft_from_template
@@ -1016,6 +1047,16 @@ def build_parser() -> argparse.ArgumentParser:
     w_dl.add_argument("--confirmed-only", action="store_true")
     w_dl.add_argument("--no-tasks", action="store_true")
     w_dl.add_argument("--json", action="store_true")
+    w_nt = ws_sub.add_parser("notifications", help="уведомления мониторинга по делу (F2)")
+    w_nt.add_argument("--slug", required=True); w_nt.add_argument("--status", default=None); w_nt.add_argument("--db-url", default=None)
+    w_ap = ws_sub.add_parser("apply", help="применить уведомление: агент обновит задетые файлы")
+    w_ap.add_argument("--slug", required=True); w_ap.add_argument("--id", type=int, required=True)
+    w_ap.add_argument("--seen", action="store_true", help="только отметить прочитанным")
+    w_ap.add_argument("--db-url", default=None); w_ap.add_argument("--model", default=None); w_ap.add_argument("--provider", default=None)
+    w_ap.add_argument("--effort", default="high"); w_ap.add_argument("--local", action="store_true"); w_ap.add_argument("--data-dir", default="data/processed")
+    w_ch = ws_sub.add_parser("changes", help="что изменилось в норме (diff редакций, правки, документы)")
+    w_ch.add_argument("--slug", required=True); w_ch.add_argument("--unit-id", required=True); w_ch.add_argument("--since", default=None)
+    w_ch.add_argument("--db-url", default=None)
     w_draft = ws_sub.add_parser("draft", help="черновик документа по шаблону (F7)")
     w_draft.add_argument("--slug", required=True)
     w_draft.add_argument("--template", required=True, help="имя из templates/*.md")

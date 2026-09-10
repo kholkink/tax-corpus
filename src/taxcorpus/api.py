@@ -706,6 +706,77 @@ def activity(slug: str, limit: int = Query(50, ge=1, le=500)) -> list[dict]:
     return CollabStore(_ws(slug)).activity(limit)
 
 
+# --- мониторинг (F2) -------------------------------------------------------------------------
+def _conn_required():
+    conn = getattr(corpus(), "conn", None)
+    if conn is None:
+        raise HTTPException(501, "мониторинг доступен только с PostgreSQL (TAXCORPUS_DB)")
+    return conn
+
+
+@app.get("/events")
+def events(since: int = 0, limit: int = Query(100, ge=1, le=1000)) -> list[dict]:
+    conn = _conn_required()
+    rows = conn.execute("SELECT event_id, kind, act_code, unit_id, doc_id, payload, detected_at, snapshot_id "
+                        "FROM corpus_event WHERE event_id > %s ORDER BY event_id DESC LIMIT %s", (since, limit)).fetchall()
+    return [dict(r) for r in rows]
+
+
+@app.get("/workspaces/{slug}/notifications")
+def list_notifications(slug: str, status: str | None = None, limit: int = Query(50, ge=1, le=500)) -> list[dict]:
+    from .monitor import notifications
+    _ws(slug)
+    return notifications(_conn_required(), slug, status, limit)
+
+
+@app.post("/workspaces/{slug}/notifications/{notification_id}/seen")
+def notification_seen(slug: str, notification_id: int) -> dict:
+    from .monitor import set_status
+    _ws(slug)
+    row = set_status(_conn_required(), notification_id, "seen")
+    if row is None:
+        raise HTTPException(404, "нет уведомления")
+    return row
+
+
+@app.post("/workspaces/{slug}/notifications/{notification_id}/apply")
+def notification_apply(slug: str, notification_id: int) -> dict:
+    from .monitor import apply_notification
+    ws = _ws(slug)
+    try:
+        result = apply_notification(_conn_required(), ws, make_agent(ws), notification_id)
+    except KeyError as exc:
+        raise HTTPException(404, "нет уведомления") from exc
+    _sync(ws)
+    return result
+
+
+@app.get("/workspaces/{slug}/changes/{unit_id}")
+def unit_changes(slug: str, unit_id: str, since: str | None = None) -> dict:
+    from .monitor import render_change, what_changed
+    ws = _ws(slug)
+    change = what_changed(_conn_required(), unit_id, since, ws.manifest.as_of)
+    change["markdown"] = render_change(change)
+    return change
+
+
+class SubscriptionCreate(BaseModel):
+    unit_id: str | None = None
+    doc_id: str | None = None
+    note: str = ""
+
+
+@app.post("/workspaces/{slug}/subscriptions", status_code=201)
+def add_subscription(slug: str, req: SubscriptionCreate) -> dict:
+    from .monitor import subscribe
+    from .workspace_store import upsert_workspace
+    ws = _ws(slug)
+    if not (req.unit_id or req.doc_id):
+        raise HTTPException(400, "нужен unit_id или doc_id")
+    conn = _conn_required()
+    return subscribe(conn, upsert_workspace(conn, ws), req.unit_id, req.doc_id, req.note)
+
+
 class WorkspaceAudit(BaseModel):
     path: str
     doc_date: date | None = None
