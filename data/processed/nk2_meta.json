@@ -10,7 +10,7 @@
   "source_path": "data/processed/nk2_red376.txt",
   "source_format": "txt",
   "source_sha256": "sha256:3bcecb276b970bf3f45341e5ba33c53c1b1a58b5dea5f4dc77496a62e41093ad",
-  "retrieved_at": "2026-09-09T17:52:17.135706+00:00",
+  "retrieved_at": "2026-09-10T09:55:03.030812+00:00",
   "valid_from": "2026-08-04",
   "stats": {
     "paragraphs_total": 23444,
@@ -19,16 +19,17 @@
       "section": 5,
       "chapter": 24,
       "article": 540,
-      "point": 4494,
+      "point": 3742,
       "subpoint": 3949
     },
     "edition_notes": 6528,
     "titles_from_next_line": 1,
     "stray_subpoints": 0,
-    "detokenized": 1242,
-    "duplicate_suffixes": 1556,
+    "detokenized": 1247,
+    "duplicate_suffixes": 98,
     "title_notes": 7,
     "article_level_points": 433,
+    "inferred_points": 1,
     "pending_title_note": null
   }
 }
