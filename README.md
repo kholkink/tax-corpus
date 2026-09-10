@@ -65,8 +65,13 @@ ID не меняются при перенумерации соседей. Ун�
 ## Быстрый старт
 
 ```bash
-python -m venv .venv && .venv/Scripts/python -m pip install -e ".[dev]"
-bash scripts/setup_postgres.sh            # локальный Postgres 16, база taxcorpus
+# Windows:
+python -m venv .venv && .venv/Scripts/python -m pip install -e ".[dev,agent,api]"
+bash scripts/setup_postgres.sh            # локальный Postgres 16 (user-space), база taxcorpus
+# Linux / WSL (без python3-venv помогает uv):
+uv venv .venv-linux --python 3.12 && uv pip install --python .venv-linux/bin/python -e ".[dev,agent,api]"
+bash scripts/setup_postgres.sh 5433       # порт 5432 в WSL обычно занят Windows-инстансом
+export TAXCORPUS_DB=postgresql://postgres@127.0.0.1:5433/taxcorpus   # его читают CLI, тесты, скрипты, API
 
 # 1. HTML банка -> нормализованный текст
 python -m taxcorpus convert --input data/raw/sources/minjust_..._red199.html \
@@ -87,7 +92,8 @@ python -m taxcorpus ingest --input data/processed/nk1_red199.txt --act-code nk1 
 # норма на дату (с историей правок из пометок редакции):
 python -m taxcorpus unit --id nk1.ch14.art88.p1 --as-of 2026-09-09
 
-# полнотекстовый поиск по нормам (ts_rank PostgreSQL, русская морфология, фильтр по дате,
+# полнотекстовый поиск по нормам (ts_rank_cd PostgreSQL: строгий проход по всем словам,
+# добор по «ИЛИ» лемм; на эталоне unit@5 = 17/23; русская морфология, фильтр по дате,
 # аббревиатуры расширяются полными формами: НДС → «налог на добавленную стоимость»):
 python -m taxcorpus search --query "камеральная налоговая проверка" --kind point --limit 10
 

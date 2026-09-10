@@ -1,10 +1,11 @@
 """Смоук-тесты загруженного корпуса. Запуск: python scripts/smoke_test.py"""
+import os
 import sys
 
 import psycopg
 from psycopg.rows import dict_row
 
-DB = sys.argv[1] if len(sys.argv) > 1 else "postgresql://postgres@localhost:5432/taxcorpus"
+DB = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TAXCORPUS_DB", "postgresql://postgres@localhost:5432/taxcorpus")
 
 conn = psycopg.connect(DB, row_factory=dict_row)
 

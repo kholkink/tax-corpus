@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -22,7 +23,7 @@ from taxcorpus.resolver import UnitIndex, article_of_unit_id, resolve_citation
 
 ROOT = Path(__file__).resolve().parents[1]
 GOLDEN = json.loads((ROOT / "tests" / "golden" / "golden_v0.json").read_text(encoding="utf-8"))
-DB = sys.argv[1] if len(sys.argv) > 1 else "postgresql://postgres@127.0.0.1:5432/taxcorpus"
+DB = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("TAXCORPUS_DB", "postgresql://postgres@127.0.0.1:5432/taxcorpus")
 
 
 def main() -> int:
