@@ -42,7 +42,7 @@ def main() -> int:
     import os
     args.model = args.model or os.environ.get("TAXCORPUS_MODEL") or "claude-opus-5"
     fallbacks = not os.environ.get("ANTHROPIC_BASE_URL")
-    client = anthropic.Anthropic()
+    client = anthropic.Anthropic(max_retries=4)  # обрывы соединения провайдера
     conn = None
     if args.local:
         corpus = LocalCorpus(ROOT / "data" / "processed")
@@ -71,7 +71,11 @@ def main() -> int:
                 if q["id"] in done:
                     continue
                 print(f"=== {q['id']} {q['question']}", flush=True)
-                result = agent.ask(q["question"], args.as_of)
+                try:
+                    result = agent.ask(q["question"], args.as_of)
+                except Exception as exc:  # noqa: BLE001 — один сбой не должен ронять прогон
+                    print(f"    [error] {type(exc).__name__}: {str(exc)[:160]}", flush=True)
+                    continue
                 checks = [c.__dict__ for c in result.verification.checks]
                 score = score_answer(q["id"], q["expected"], result.answer, checks,
                                      reworked=result.reworked, tool_calls=len(result.tool_calls),
