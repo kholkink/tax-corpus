@@ -225,12 +225,24 @@ def eval_search(ctx: JobContext) -> None:
     ctx.say(buf.getvalue().strip())
 
 
-@job("eval_agent", "ночная оценка агента на эталоне (платные запросы; --limit N)")
+@job("eval_agent", "ночная оценка агента на эталоне (платные запросы; --limit N, --repeat K, --topic T)")
 def eval_agent(ctx: JobContext) -> None:
     _script("eval_agent").main(ctx.argv or ["--limit", "10"])
     summary_path = ROOT / "reports" / "eval_agent.json"
     if summary_path.exists():
-        ctx.stats["summary"] = json.loads(summary_path.read_text(encoding="utf-8")).get("summary")
+        data = json.loads(summary_path.read_text(encoding="utf-8"))
+        ctx.stats["summary"] = data.get("summary")
+        ctx.stats["by_topic"] = data.get("by_topic")
+
+
+@job("accuracy", "собрать карту точности reports/accuracy.{json,md} из сохранённых отчётов (без модели)")
+def accuracy(ctx: JobContext) -> None:
+    data = _script("eval_agent").write_accuracy()
+    ctx.stats.update({k: v for k, v in data.items() if k in ("golden_version", "golden_questions", "corpus_snapshot")})
+    if data.get("agent"):
+        ctx.stats["agent"] = data["agent"]["summary"]
+    ctx.event("accuracy_updated", golden_questions=data["golden_questions"])
+    ctx.say(f"карта точности обновлена: {data['golden_questions']} вопросов эталона")
 
 
 @job("daily", "ежедневный конвейер: краулеры -> load_docs -> check_bank_editions -> snapshot")
@@ -292,4 +304,6 @@ def history(conn, name: str | None = None, limit: int = 20) -> list[dict]:
 CRONTAB = """# tax-corpus: ежедневный конвейер в 03:00, ночная оценка в 04:00 (см. README)
 0 3 * * *  cd {root} && {python} -m taxcorpus jobs run daily >> reports/jobs.log 2>&1
 0 4 * * 1  cd {root} && {python} -m taxcorpus jobs run eval_agent -- --limit 30 >> reports/jobs.log 2>&1
+30 5 * * 1  cd {root} && {python} -m taxcorpus jobs run eval_search >> reports/jobs.log 2>&1
+45 5 * * 1  cd {root} && {python} -m taxcorpus jobs run accuracy >> reports/jobs.log 2>&1
 """

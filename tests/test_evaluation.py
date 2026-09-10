@@ -65,3 +65,49 @@ def test_documents_excluded_and_precision_undefined_without_expected():
     s = score_answer("q", [], "**Вывод** нормы отменены", checks)
     assert s.precision_unit is None and s.recall_unit is None and not s.abstained
     assert score_answer("q", [], "В корпусе нет документа с такими реквизитами", []).abstained
+
+
+def test_by_topic_spread_and_accuracy_report(tmp_path):
+    from taxcorpus.evaluation import EvalSummary, accuracy_report, score_answer
+
+    def sc(qid, topic, rep, cited_ok, expected):
+        checks = [{"raw": c, "unit_id": c, "status": "ok"} for c in cited_ok]
+        return score_answer(qid, expected, "ответ", checks, topic=topic, rep=rep)
+
+    scores = [sc("q1", "НДС", 0, ["nk2.ch21.art164.p3"], ["nk2.ch21.art164.p3"]),
+              sc("q2", "НДС", 0, ["nk2.ch21.art164.p1", "nk2.ch21.art165"], ["nk2.ch21.art164.p1"]),
+              sc("q3", "проверки", 0, ["nk1.ch14.art88.p2"], ["nk1.ch14.art88.p2"]),
+              sc("q1", "НДС", 1, ["nk2.ch21.art164.p3", "nk2.ch21.art164"], ["nk2.ch21.art164.p3"])]
+    summary = EvalSummary(scores)
+    topics = summary.by_topic()
+    assert set(topics) == {"НДС", "проверки"} and topics["проверки"]["citation_precision_unit"] == 1.0
+    assert topics["НДС"]["questions"] == 3 and 0.5 < topics["НДС"]["citation_precision_unit"] < 1.0
+    reps = summary.by_rep()
+    assert set(reps) == {0, 1} and reps[1]["citation_precision_unit"] == 1.0   # предок статьи считается попаданием
+    spread = summary.spread()
+    assert spread["citation_precision_unit"][0] < spread["citation_precision_unit"][1] == 1.0
+    rendered = summary.render()
+    assert "| тема |" in rendered and "| НДС |" in rendered and "по повторам" in rendered
+
+    golden = {"version": "v1-draft", "questions": [{"id": "q1", "topic": "НДС"}, {"id": "q2", "topic": "НДС"},
+                                                   {"id": "q3", "topic": "проверки"}]}
+    agent = {"model": "m", "as_of": "2026-09-10", "runs": [{"score": s.__dict__} for s in scores]}
+    search = {"variants": {"hybrid": {"unit_hits": 2, "article_hits": 3, "questions": 3, "misses": ["q2"]}},
+              "by_topic": {"НДС": {"questions": 2, "hybrid": 1}, "проверки": {"questions": 1, "hybrid": 1}}}
+    data, md = accuracy_report(agent, search, golden, snapshot=7, generated_at="2026-09-11T00:00:00+00:00")
+    assert data["golden_questions"] == 3 and data["golden_topics"] == {"НДС": 2, "проверки": 1}
+    assert data["agent"]["reps"] == 2 and data["agent"]["by_topic"]["проверки"]["questions"] == 1
+    assert "# Карта точности" in md and "| hybrid | 2/3 | 3/3 |" in md and "| НДС | 2 | 1 |" in md
+    assert "Снимок корпуса: 7" in md and "| вопрос |" not in md            # без таблицы по вопросам
+    data2, md2 = accuracy_report(None, None, golden)
+    assert data2["agent"] is None and "ещё не выполнялся" in md2 and "ещё не выполнялась" in md2
+
+
+def test_golden_has_topics():
+    import json
+    from pathlib import Path
+    g = json.loads((Path(__file__).resolve().parents[1] / "tests" / "golden" / "golden_v0.json").read_text(encoding="utf-8"))
+    assert all(q.get("topic") for q in g["questions"]) and set(g["topics"]) == {q["topic"] for q in g["questions"]}
+    assert len(g["questions"]) >= 70 and len(g["topics"]) >= 12
+    ids = [q["id"] for q in g["questions"]]
+    assert len(ids) == len(set(ids))

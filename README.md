@@ -183,6 +183,13 @@ python -m taxcorpus workspace confirm-fact --slug delo1 --id 2
 python -m taxcorpus workspace timeline --slug delo1
 python -m taxcorpus workspace deadlines --slug delo1             # сроки со ссылками на нормы -> задачи
 
+# карта точности (F11): эталон tests/golden/golden_v0.json (v1-draft, 75 вопросов, 14 тем; каждый
+# ожидаемый ID сверен с текстом корпуса по якорю; протокол сбора v1 с юристами — docs/golden-v1-protocol.md):
+python scripts/eval_search.py                          # unit@5/article@5 по темам -> reports/eval_search.json
+python scripts/eval_agent.py --repeat 3 --topic НДС     # прогон агента (платно), повторы = разброс модели
+python scripts/eval_agent.py --accuracy                # reports/accuracy.{json,md}; в API — GET /accuracy
+python -m taxcorpus jobs run accuracy                  # то же по расписанию
+
 # аудит документа (F1 плана ПО): свой или чужой меморандум -> по каждой ссылке статус на дату,
 # правки после даты документа, снятые письма, не упомянутые обязательные письма ФНС;
 # в UI — вкладка «Аудит документа», в деле — инструмент audit_document, API POST /audit

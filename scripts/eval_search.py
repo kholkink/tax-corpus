@@ -37,6 +37,9 @@ def main() -> int:
     if not corpus.hybrid.enabled:
         variants = {"lexical": variants["lexical"]}
         print("[warn] индекс не построен — только лексический вариант", file=sys.stderr)
+    report = {"as_of": as_of, "questions": len(qs), "variants": {}, "by_topic": {}, "per_question": {}}
+    for q in qs:
+        report["by_topic"].setdefault(q.get("topic", "без темы"), {"questions": 0})["questions"] += 1
     for name, fn in variants.items():
         u_hits = a_hits = 0
         misses = []
@@ -50,7 +53,12 @@ def main() -> int:
             a_hits += a
             if not u:
                 misses.append(q["id"])
+            topic = q.get("topic", "без темы")
+            report["by_topic"][topic][name] = report["by_topic"][topic].get(name, 0) + int(u)
+            report["per_question"].setdefault(q["id"], {"topic": topic})[name] = {"unit": bool(u), "article": bool(a), "top": ids}
+        report["variants"][name] = {"unit_hits": u_hits, "article_hits": a_hits, "questions": len(qs), "misses": misses}
         print(f"{name:8s} unit@5 {u_hits}/{len(qs)}  article@5 {a_hits}/{len(qs)}  промахи: {' '.join(misses)}")
+    (ROOT / "reports" / "eval_search.json").write_text(json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
     conn.close()
     return 0
 

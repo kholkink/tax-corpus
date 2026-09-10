@@ -1,0 +1,2400 @@
+{
+  "generated_at": "2026-09-10T21:54:19+00:00",
+  "golden_version": "v1-draft",
+  "golden_questions": 75,
+  "golden_topics": {
+    "проверки": 11,
+    "сроки и требования": 6,
+    "ответственность": 9,
+    "ТЦО и взаимозависимость": 3,
+    "необоснованная выгода": 2,
+    "декларации и учёт": 2,
+    "НДС": 12,
+    "НДФЛ": 5,
+    "взносы": 2,
+    "прибыль": 4,
+    "спецрежимы": 5,
+    "резолвинг ссылок": 6,
+    "действие во времени": 4,
+    "ловушки": 4
+  },
+  "corpus_snapshot": 32,
+  "agent": {
+    "model": "deepseek-chat",
+    "as_of": "2026-09-09",
+    "summary": {
+      "questions": 27,
+      "citation_precision_unit": 0.499025974025974,
+      "citation_recall_unit": 1.0,
+      "citation_precision_article": 0.5611111111111111,
+      "citation_recall_article": 1.0,
+      "hallucination_rate": 0.014285714285714285,
+      "temporal_correctness": 1.0,
+      "abstention_quality": 0.5,
+      "reworked_share": 0.07407407407407407,
+      "avg_tool_calls": 6.407407407407407
+    },
+    "by_topic": {
+      "НДС": {
+        "questions": 7,
+        "citation_precision_unit": 0.25074211502782934,
+        "citation_recall_unit": 1.0,
+        "citation_precision_article": 0.41428571428571426,
+        "citation_recall_article": 1.0,
+        "hallucination_rate": 0.0,
+        "temporal_correctness": 1.0,
+        "abstention_quality": null,
+        "reworked_share": 0.0,
+        "avg_tool_calls": 7.428571428571429
+      },
+      "НДФЛ": {
+        "questions": 2,
+        "citation_precision_unit": 0.8333333333333333,
+        "citation_recall_unit": 1.0,
+        "citation_precision_article": 0.75,
+        "citation_recall_article": 1.0,
+        "hallucination_rate": 0.0,
+        "temporal_correctness": 1.0,
+        "abstention_quality": null,
+        "reworked_share": 0.0,
+        "avg_tool_calls": 3.5
+      },
+      "ТЦО и взаимозависимость": {
+        "questions": 1,
+        "citation_precision_unit": 0.3,
+        "citation_recall_unit": 1.0,
+        "citation_precision_article": 0.5,
+        "citation_recall_article": 1.0,
+        "hallucination_rate": 0.0,
+        "temporal_correctness": 1.0,
+        "abstention_quality": null,
+        "reworked_share": 0.0,
+        "avg_tool_calls": 12.0
+      },
+      "взносы": {
+        "questions": 1,
+        "citation_precision_unit": 1.0,
+        "citation_recall_unit": 1.0,
+        "citation_precision_article": 1.0,
+        "citation_recall_article": 1.0,
+        "hallucination_rate": 0.0,
+        "temporal_correctness": 1.0,
+        "abstention_quality": null,
+        "reworked_share": 0.0,
+        "avg_tool_calls": 5.0
+      },
+      "декларации и учёт": {
+        "questions": 1,
+        "citation_precision_unit": 0.4,
+        "citation_recall_unit": 1.0,
+        "citation_precision_article": 0.25,
+        "citation_recall_article": 1.0,
+        "hallucination_rate": 0.0,
+        "temporal_correctness": 1.0,
+        "abstention_quality": null,
+        "reworked_share": 0.0,
+        "avg_tool_calls": 12.0
+      },
+      "ловушки": {
+        "questions": 3,
+        "citation_precision_unit": null,
+        "citation_recall_unit": null,
+        "citation_precision_article": null,
+        "citation_recall_article": null,
+        "hallucination_rate": 0.2,
+        "temporal_correctness": 1.0,
+        "abstention_quality": 0.5,
+        "reworked_share": 0.3333333333333333,
+        "avg_tool_calls": 4.0
+      },
+      "необоснованная выгода": {
+        "questions": 1,
+        "citation_precision_unit": 0.5,
+        "citation_recall_unit": 1.0,
+        "citation_precision_article": 1.0,
+        "citation_recall_article": 1.0,
+        "hallucination_rate": 0.0,
+        "temporal_correctness": 1.0,
+        "abstention_quality": null,
+        "reworked_share": 0.0,
+        "avg_tool_calls": 8.0
+      },
+      "ответственность": {
+        "questions": 3,
+        "citation_precision_unit": 0.373015873015873,
+        "citation_recall_unit": 1.0,
+        "citation_precision_article": 0.31666666666666665,
+        "citation_recall_article": 1.0,
+        "hallucination_rate": 0.0,
+        "temporal_correctness": 1.0,
+        "abstention_quality": null,
+        "reworked_share": 0.0,
+        "avg_tool_calls": 6.333333333333333
+      },
+      "прибыль": {
+        "questions": 1,
+        "citation_precision_unit": 1.0,
+        "citation_recall_unit": 1.0,
+        "citation_precision_article": 1.0,
+        "citation_recall_article": 1.0,
+        "hallucination_rate": 0.0,
+        "temporal_correctness": 1.0,
+        "abstention_quality": null,
+        "reworked_share": 0.0,
+        "avg_tool_calls": 3.0
+      },
+      "проверки": {
+        "questions": 4,
+        "citation_precision_unit": 0.6464285714285715,
+        "citation_recall_unit": 1.0,
+        "citation_precision_article": 0.5916666666666667,
+        "citation_recall_article": 1.0,
+        "hallucination_rate": 0.0,
+        "temporal_correctness": 1.0,
+        "abstention_quality": null,
+        "reworked_share": 0.0,
+        "avg_tool_calls": 5.25
+      },
+      "спецрежимы": {
+        "questions": 2,
+        "citation_precision_unit": 0.7,
+        "citation_recall_unit": 1.0,
+        "citation_precision_article": 0.75,
+        "citation_recall_article": 1.0,
+        "hallucination_rate": 0.0,
+        "temporal_correctness": 1.0,
+        "abstention_quality": null,
+        "reworked_share": 0.0,
+        "avg_tool_calls": 5.5
+      },
+      "сроки и требования": {
+        "questions": 1,
+        "citation_precision_unit": 0.25,
+        "citation_recall_unit": 1.0,
+        "citation_precision_article": 0.5,
+        "citation_recall_article": 1.0,
+        "hallucination_rate": 0.0,
+        "temporal_correctness": 1.0,
+        "abstention_quality": null,
+        "reworked_share": 1.0,
+        "avg_tool_calls": 11.0
+      }
+    },
+    "spread": {},
+    "reps": 1
+  },
+  "search": {
+    "as_of": "2026-09-09",
+    "questions": 58,
+    "variants": {
+      "lexical": {
+        "unit_hits": 43,
+        "article_hits": 44,
+        "questions": 58,
+        "misses": [
+          "q05",
+          "q06",
+          "q11",
+          "q14",
+          "q22",
+          "q23",
+          "q42",
+          "q45",
+          "q48",
+          "q51",
+          "q53",
+          "q60",
+          "q68",
+          "q70",
+          "q72"
+        ]
+      },
+      "dense": {
+        "unit_hits": 48,
+        "article_hits": 55,
+        "questions": 58,
+        "misses": [
+          "q08",
+          "q10",
+          "q11",
+          "q14",
+          "q18",
+          "q21",
+          "q41",
+          "q58",
+          "q59",
+          "q60"
+        ]
+      },
+      "hybrid": {
+        "unit_hits": 54,
+        "article_hits": 57,
+        "questions": 58,
+        "misses": [
+          "q11",
+          "q14",
+          "q53",
+          "q60"
+        ]
+      }
+    },
+    "by_topic": {
+      "проверки": {
+        "questions": 9,
+        "lexical": 8,
+        "dense": 8,
+        "hybrid": 9
+      },
+      "сроки и требования": {
+        "questions": 5,
+        "lexical": 4,
+        "dense": 5,
+        "hybrid": 5
+      },
+      "ответственность": {
+        "questions": 9,
+        "lexical": 4,
+        "dense": 9,
+        "hybrid": 9
+      },
+      "ТЦО и взаимозависимость": {
+        "questions": 3,
+        "lexical": 3,
+        "dense": 2,
+        "hybrid": 3
+      },
+      "необоснованная выгода": {
+        "questions": 2,
+        "lexical": 2,
+        "dense": 2,
+        "hybrid": 2
+      },
+      "декларации и учёт": {
+        "questions": 2,
+        "lexical": 1,
+        "dense": 1,
+        "hybrid": 1
+      },
+      "НДС": {
+        "questions": 12,
+        "lexical": 9,
+        "dense": 7,
+        "hybrid": 9
+      },
+      "НДФЛ": {
+        "questions": 5,
+        "lexical": 5,
+        "dense": 4,
+        "hybrid": 5
+      },
+      "взносы": {
+        "questions": 2,
+        "lexical": 2,
+        "dense": 2,
+        "hybrid": 2
+      },
+      "прибыль": {
+        "questions": 4,
+        "lexical": 4,
+        "dense": 3,
+        "hybrid": 4
+      },
+      "спецрежимы": {
+        "questions": 5,
+        "lexical": 1,
+        "dense": 5,
+        "hybrid": 5
+      }
+    },
+    "per_question": {
+      "q01": {
+        "topic": "проверки",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art88.p1-2",
+            "nk1.ch14.art88.p2",
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch8.art58.p9",
+            "nk2.ch23.art228.p6"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art88.p1-2",
+            "nk1.ch14.art88.p2",
+            "nk1.ch14.art88.p1-1@2",
+            "nk2.ch23.art221-1.p5",
+            "nk1.ch14.art88.p8-3"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art88.p1-2",
+            "nk1.ch14.art88.p2",
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch14.art100.p1",
+            "nk1.ch14.art88.p1"
+          ]
+        }
+      },
+      "q02": {
+        "topic": "проверки",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art89.p6",
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch8.art58.p9",
+            "nk2.ch23.art228.p6",
+            "nk1.ch14.art88.p2"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art89.p6",
+            "nk1.ch14.art89-1.p5",
+            "nk1.ch14.art89.p9",
+            "nk1.ch14.art89.p7",
+            "nk1.ch14-5.art105-17.p4"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art89.p6",
+            "nk1.ch14.art89.p10",
+            "nk1.ch14.art89.p5-1",
+            "nk1.ch14.art100.p1",
+            "nk1.ch1.art11-3.p5"
+          ]
+        }
+      },
+      "q03": {
+        "topic": "проверки",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art89.p6",
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch8.art58.p9",
+            "nk2.ch23.art228.p6",
+            "nk1.ch14.art88.p2"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art89.p6",
+            "nk1.ch14-5.art105-17.p4",
+            "nk1.ch14.art89-1.p5",
+            "nk1.ch14.art89.p4",
+            "nk1.ch14.art89.p9.sp4"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art89.p6",
+            "nk1.ch14.art88.p2",
+            "nk1.ch14.art89.p10",
+            "nk1.ch14.art89.p5-1",
+            "nk1.ch14.art100.p1"
+          ]
+        }
+      },
+      "q04": {
+        "topic": "сроки и требования",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch10.art69.p3",
+            "nk2.ch21.art165.p9",
+            "nk1.ch1.art11-3.p5",
+            "nk2.rviii-1.art346-6.p6",
+            "nk1.ch1.art11-3.p7"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch10.art69.p3",
+            "nk1.ch8.art48.p2",
+            "nk1.ch10.art69.p4",
+            "nk1.ch8.art46.p4",
+            "nk1.ch8.art48.p10"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch10.art69.p3",
+            "nk1.ch19.art138.p5-1",
+            "nk2.ch22.art203-1.p18",
+            "nk1.ch11.art74-1.p5",
+            "nk2.ch21.art165.p9"
+          ]
+        }
+      },
+      "q05": {
+        "topic": "ответственность",
+        "lexical": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk1.ch1.art4.p3",
+            "nk2.ch25-4.art333-45.p1",
+            "nk1.ch1.art11-3.p5",
+            "nk2.ch25-4.art333-45.p1.sp4",
+            "nk2.ch25-4.art333-45.p1.sp3"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch16.art119.p1",
+            "nk1.ch16.art129-1.p1",
+            "nk2.ch21.art174.p5-4",
+            "nk1.ch16.art126.p2",
+            "nk1.ch13.art80.p4-2"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch1.art4.p3",
+            "nk1.ch16.art119.p1",
+            "nk2.ch25-4.art333-45.p1",
+            "nk1.ch16.art129-1.p1",
+            "nk1.ch1.art11-3.p5"
+          ]
+        }
+      },
+      "q06": {
+        "topic": "ответственность",
+        "lexical": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk2.ch25-4.art333-45.p1",
+            "nk1.ch1.art11-3.p5",
+            "nk2.ch25-4.art333-45.p1.sp3",
+            "nk1.ch8.art58.p9",
+            "nk2.ch23.art228.p6"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch16.art122.p3",
+            "nk1.ch16.art122-1.p2",
+            "nk1.ch16.art129-3.p1-2",
+            "nk1.ch16.art129-5",
+            "nk1.ch16.art116.p2"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch25-4.art333-45.p1",
+            "nk1.ch16.art122.p3",
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch16.art122-1.p2",
+            "nk2.ch25-4.art333-45.p1.sp3"
+          ]
+        }
+      },
+      "q07": {
+        "topic": "ответственность",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch15.art113.p1",
+            "nk2.ch25-3.art333-35.p3",
+            "nk2.ch22.art193.p1",
+            "nk2.ch25.art251.p1",
+            "nk2.ch25-3.art333-33.p1"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch15.art113.p1",
+            "nk1.ch15.art113.p1-1",
+            "nk1.ch19.art139-1.p1",
+            "nk1.ch8.art48.p10",
+            "nk1.ch19.art139.p2"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch15.art113.p1",
+            "nk2.ch25-3.art333-35.p3",
+            "nk1.ch15.art113.p1-1",
+            "nk2.ch22.art193.p1",
+            "nk1.ch19.art139-1.p1"
+          ]
+        }
+      },
+      "q08": {
+        "topic": "ТЦО и взаимозависимость",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14-1.art105-1.p2",
+            "nk1.ch14-1.art105-1.p2.sp12",
+            "nk2.ch23.art220.p2",
+            "nk2.ch25.art251.p1",
+            "nk2.ch34.art427.p5"
+          ]
+        },
+        "dense": {
+          "unit": false,
+          "article": true,
+          "top": [
+            "nk1.ch14-1.art105-1.p2.sp3",
+            "nk1.ch14-1.art105-1.p2.sp2",
+            "nk1.ch14-1.art105-1.p2.sp1",
+            "nk1.ch14-1.art105-1.p2.sp12",
+            "nk1.ch14-1.art105-1.p2.sp9"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14-1.art105-1.p2.sp12",
+            "nk1.ch14-1.art105-1.p2",
+            "nk1.ch14-1.art105-1.p2.sp3",
+            "nk1.ch14-1.art105-1.p2.sp2",
+            "nk2.ch23.art220.p2"
+          ]
+        }
+      },
+      "q09": {
+        "topic": "необоснованная выгода",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch8.art54-1.p1",
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch8.art58.p9",
+            "nk2.ch25.art251.p1",
+            "nk2.ch23.art228.p6"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch8.art54-1.p1",
+            "nk2.ch23.art210.p2-3",
+            "nk1.ch16.art120.p3",
+            "nk2.ch22.art179-9.p15",
+            "nk1.ch14.art89.p10.sp2@2"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch8.art54-1.p1",
+            "nk1.ch1.art11-3.p5",
+            "nk2.ch23.art210.p2-3",
+            "nk1.ch8.art58.p9",
+            "nk1.ch16.art120.p3"
+          ]
+        }
+      },
+      "q10": {
+        "topic": "декларации и учёт",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch13.art80.p3",
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch25.art251.p1",
+            "nk1.ch3.art21.p1-2",
+            "nk1.ch5.art31.p4"
+          ]
+        },
+        "dense": {
+          "unit": false,
+          "article": true,
+          "top": [
+            "nk2.ch34.art431.p10",
+            "nk1.ch10.art69.p4",
+            "nk1.ch14.art102.p1.sp9",
+            "nk1.ch14.art85.p9-4.sp2",
+            "nk1.ch13.art80.p1"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch5.art31.p4",
+            "nk1.ch13.art80.p3",
+            "nk1.ch11.art74-1.p2",
+            "nk1.ch13.art80.p1",
+            "nk1.ch13.art80.p4"
+          ]
+        }
+      },
+      "q11": {
+        "topic": "НДС",
+        "lexical": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk2.rviii-1.art346-1.p3",
+            "nk1.ch14.art88.p8-1",
+            "nk1.ch14.art88.p2",
+            "nk2.ch26-2.art346-15.p1",
+            "nk2.ch26-5.art346-45.p7"
+          ]
+        },
+        "dense": {
+          "unit": false,
+          "article": true,
+          "top": [
+            "nk2.ch23.art224.p3-1",
+            "nk2.ch21.art164.p7",
+            "nk2.ch25.art284.p1-2",
+            "nk2.ch25.art284.p1-18",
+            "nk2.ch25-2.art333-12.p1-1"
+          ]
+        },
+        "hybrid": {
+          "unit": false,
+          "article": true,
+          "top": [
+            "nk1.ch14.art88.p2",
+            "nk2.ch23.art224.p3-1",
+            "nk2.rviii-1.art346-1.p3",
+            "nk2.ch21.art164.p7",
+            "nk1.ch14.art88.p8-1"
+          ]
+        }
+      },
+      "q12": {
+        "topic": "НДС",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art164.p1",
+            "nk2.ch21.art165.p15",
+            "nk2.ch21.art165.p1",
+            "nk2.ch22.art193.p1",
+            "nk2.ch21.art165.p9"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art165.p3.sp4",
+            "nk2.ch21.art165.p1.sp7",
+            "nk2.ch21.art164.p1",
+            "nk2.ch21.art165.p2-2",
+            "nk2.ch21.art165.p9"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art164.p1",
+            "nk2.ch21.art165.p1",
+            "nk2.ch21.art165.p9",
+            "nk2.ch21.art165.p3-1",
+            "nk2.ch21.art165.p3"
+          ]
+        }
+      },
+      "q13": {
+        "topic": "НДС",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art164.p4",
+            "nk2.ch25.art251.p1",
+            "nk1.ch14.art86.p2",
+            "nk2.ch21.art154.p1",
+            "nk1.ch18.art135-1"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art169.p5-1",
+            "nk2.ch21.art164.p4",
+            "nk2.ch21.art169.p5.sp4",
+            "nk2.ch21.art154.p1",
+            "nk2.ch21.art171.p12"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art164.p4",
+            "nk2.ch21.art154.p1",
+            "nk2.ch21.art169.p5",
+            "nk2.ch21.art169.p5.sp4",
+            "nk2.ch21.art171.p12"
+          ]
+        }
+      },
+      "q14": {
+        "topic": "НДС",
+        "lexical": {
+          "unit": false,
+          "article": true,
+          "top": [
+            "nk2.ch21.art171.p6",
+            "nk2.ch21.art170.p2-1",
+            "nk2.ch21.art170.p4",
+            "nk2.ch21.art170.p3",
+            "nk2.ch21.art171.p12"
+          ]
+        },
+        "dense": {
+          "unit": false,
+          "article": true,
+          "top": [
+            "nk2.ch21.art171.p2-5",
+            "nk2.ch21.art171.p2-2",
+            "nk2.ch21.art171.p2-4",
+            "nk2.ch21.art171.p4",
+            "nk2.ch21.art171.p2-3"
+          ]
+        },
+        "hybrid": {
+          "unit": false,
+          "article": true,
+          "top": [
+            "nk2.ch21.art171.p4",
+            "nk2.ch21.art171.p12",
+            "nk2.ch21.art172.p1",
+            "nk2.ch21.art171.p6",
+            "nk2.ch21.art170.p4"
+          ]
+        }
+      },
+      "q15": {
+        "topic": "НДС",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art168.p3",
+            "nk2.ch21.art165.p9",
+            "nk1.ch14.art86.p2",
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch14.art84.p2"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art168.p3",
+            "nk1.ch19.art139-3.p2",
+            "nk2.ch21.art169.p2",
+            "nk2.ch25.art310-1.p10.sp1",
+            "nk2.ch21.art174.p5-4"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art168.p3",
+            "nk2.ch21.art169.p5-2",
+            "nk2.ch21.art169.p5",
+            "nk2.ch21.art165.p9",
+            "nk1.ch19.art139-3.p2"
+          ]
+        }
+      },
+      "q16": {
+        "topic": "НДС",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art167.p1",
+            "nk1.ch1.art11-3.p5",
+            "nk2.ch23.art228.p6",
+            "nk1.ch8.art58.p9",
+            "nk2.ch28.art362.p8"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art167.p1",
+            "nk2.ch21.art167.p9",
+            "nk2.ch21.art167.p14",
+            "nk2.ch21.art167.p8",
+            "nk2.ch21.art167.p16"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art167.p1",
+            "nk1.ch1.art11-3.p5",
+            "nk2.ch21.art167.p9",
+            "nk2.ch23.art228.p6",
+            "nk2.ch21.art167.p14"
+          ]
+        }
+      },
+      "q17": {
+        "topic": "НДС",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.rviii-1.art346-1.p3",
+            "nk2.ch21.art143.p1",
+            "nk2.ch26-5.art346-43.p11",
+            "nk2.ch21.art170.p2",
+            "nk1.ch14-4.art105-14.p2"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art143.p1",
+            "nk2.ch33-1.art418-2",
+            "nk2.ch26-2.art346-12.p1",
+            "nk2.ch26-5.art346-43.p11",
+            "nk2.ch22.art179.p2"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art143.p1",
+            "nk2.ch26-5.art346-43.p11",
+            "nk2.rviii-1.art346-1.p3",
+            "nk2.ch33-1.art418-2",
+            "nk2.ch26-2.art346-12.p1"
+          ]
+        }
+      },
+      "q18": {
+        "topic": "НДФЛ",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch25.art284.p4-5",
+            "nk2.ch23.art224.p1-1",
+            "nk2.ch23.art224.p1-2",
+            "nk2.ch23.art224.p1",
+            "nk2.ch21.art154.p1"
+          ]
+        },
+        "dense": {
+          "unit": false,
+          "article": true,
+          "top": [
+            "nk2.ch23.art224.p1-1",
+            "nk2.ch23.art224.p1-2",
+            "nk2.ch25-5.art333-61.p2",
+            "nk2.ch23.art224.p2",
+            "nk2.ch25.art284.p1-6"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch23.art224.p1-1",
+            "nk2.ch23.art224.p1-2",
+            "nk2.ch23.art224.p1",
+            "nk2.ch25.art284.p4-5",
+            "nk2.ch25-5.art333-61.p2"
+          ]
+        }
+      },
+      "q19": {
+        "topic": "НДФЛ",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch23.art218.p1",
+            "nk2.ch23.art218.p1.sp4",
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch8.art58.p9",
+            "nk2.ch23.art228.p6"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch23.art218.p1.sp4",
+            "nk2.ch23.art219.p1.sp3",
+            "nk2.ch23.art218.p3",
+            "nk2.ch32.art403.p6-1",
+            "nk2.ch23.art219-2.p1.sp5"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch23.art218.p1.sp4",
+            "nk2.ch23.art218.p1",
+            "nk2.ch23.art219.p1.sp3",
+            "nk1.ch1.art11-3.p5",
+            "nk2.ch23.art218.p3"
+          ]
+        }
+      },
+      "q20": {
+        "topic": "взносы",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch34.art425.p3",
+            "nk2.ch25.art264.p1",
+            "nk2.ch25-4.art333-45.p1",
+            "nk2.ch25-4.art333-45.p1.sp3",
+            "nk2.ch25-4.art333-45.p1.sp4"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch34.art425.p3",
+            "nk2.ch34.art425.p3.sp1",
+            "nk2.ch34.art427.p2-2-1",
+            "nk2.ch34.art430.p1-5.sp2",
+            "nk2.ch34.art427.p2.sp6"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch34.art425.p3",
+            "nk2.ch34.art427.p2",
+            "nk2.ch34.art431.p6-2",
+            "nk2.ch25.art264.p1",
+            "nk2.ch34.art425.p3.sp1"
+          ]
+        }
+      },
+      "q21": {
+        "topic": "прибыль",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch3-1.art25-2.p6",
+            "nk1.ch3-1.art25-2.p6.sp9",
+            "nk2.ch25.art284-3.p3",
+            "nk2.ch25.art284-3.p3.sp2",
+            "nk2.ch25.art284.p1"
+          ]
+        },
+        "dense": {
+          "unit": false,
+          "article": true,
+          "top": [
+            "nk2.ch25.art284.p1-6",
+            "nk2.ch25.art284.p3.sp1-4",
+            "nk2.ch25.art284.p2.sp4",
+            "nk2.ch25.art284-3.p2",
+            "nk2.ch25.art284.p2.sp1"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch25.art284-3.p3",
+            "nk2.ch25.art284.p1",
+            "nk2.ch25.art284-3.p3.sp2",
+            "nk1.ch3-1.art25-2.p6",
+            "nk2.ch25.art284.p1-6"
+          ]
+        }
+      },
+      "q22": {
+        "topic": "спецрежимы",
+        "lexical": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk2.ch25-4.art333-45.p1",
+            "nk2.ch25.art251.p1",
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch25.art284.p3",
+            "nk2.ch25-4.art333-45.p1.sp3"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch26-2.art346-20.p1",
+            "nk2.ch26-2.art346-20.p4",
+            "nk2.ch26-2.art346-11.p3",
+            "nk2.ch26-2.art346-11.p2",
+            "nk2.ch26-2.art346-25.p2-1"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch25.art284.p4",
+            "nk2.ch25-4.art333-45.p1",
+            "nk2.ch26-2.art346-20.p1",
+            "nk2.ch25.art251.p1",
+            "nk2.ch26-2.art346-20.p4"
+          ]
+        }
+      },
+      "q23": {
+        "topic": "спецрежимы",
+        "lexical": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk2.ch25-4.art333-45.p1",
+            "nk2.ch25-4.art333-45.p1.sp4",
+            "nk2.ch25-4.art333-45.p1.sp3",
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch8.art58.p9"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch26-5.art346-50.p1",
+            "nk2.rviii-1.art346-8.p1",
+            "nk2.ch23.art224.p1-2",
+            "nk2.ch26-5.art346-51.p1",
+            "nk2.ch26-2.art346-20.p1"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch25-4.art333-45.p1",
+            "nk2.ch26-5.art346-50.p1",
+            "nk2.ch25-4.art333-45.p1.sp4",
+            "nk2.rviii-1.art346-8.p1",
+            "nk2.ch25-4.art333-45.p1.sp3"
+          ]
+        }
+      },
+      "q38": {
+        "topic": "проверки",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art100.p1",
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch8.art58.p9",
+            "nk1.ch14.art88.p2",
+            "nk2.ch23.art228.p6"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art100.p1",
+            "nk1.ch14.art89.p6",
+            "nk1.ch14.art89.p8",
+            "nk1.ch14.art89.p15",
+            "nk1.ch14.art89-1.p5"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art100.p1",
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch14.art89.p6",
+            "nk1.ch8.art58.p9",
+            "nk1.ch14.art89.p8"
+          ]
+        }
+      },
+      "q39": {
+        "topic": "проверки",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art100.p6",
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch8.art58.p9",
+            "nk2.ch25.art251.p1",
+            "nk2.ch23.art228.p6"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art101.p1",
+            "nk1.ch14.art100.p6",
+            "nk1.ch14-5.art105-17.p13",
+            "nk1.ch14.art101.p6-2",
+            "nk1.ch14.art101.p6"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art100.p6",
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch14.art101.p1",
+            "nk1.ch8.art58.p9",
+            "nk1.ch14-5.art105-17.p13"
+          ]
+        }
+      },
+      "q40": {
+        "topic": "проверки",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art101.p9",
+            "nk1.ch1.art11-3.p5",
+            "nk2.ch25-3.art333-35.p3",
+            "nk2.ch26.art343.p19",
+            "nk2.ch26.art342-5.p4"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art101-3.p1",
+            "nk1.ch14.art101.p9",
+            "nk1.ch15.art113.p1-1",
+            "nk1.ch14.art101-4.p9",
+            "nk1.ch15.art113.p1"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art101.p9",
+            "nk1.ch19.art138.p5-1",
+            "nk1.ch1.art5.p1",
+            "nk1.ch14.art101-3.p1",
+            "nk1.ch1.art11-3.p5"
+          ]
+        }
+      },
+      "q41": {
+        "topic": "проверки",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14-5.art105-17.p7",
+            "nk1.ch14.art93.p3",
+            "nk2.ch25-4.art333-45.p1",
+            "nk2.ch25-4.art333-45.p1.sp3",
+            "nk2.ch21.art165.p9"
+          ]
+        },
+        "dense": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk1.ch14.art93-2.p5",
+            "nk1.ch14-5.art105-17.p7",
+            "nk1.ch14.art93-1.p5",
+            "nk2.ch25.art310-2.p3",
+            "nk1.ch14-8.art105-29.p5"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14-5.art105-17.p7",
+            "nk1.ch14.art93.p3",
+            "nk1.ch14.art93-1.p5",
+            "nk1.ch14.art93-2.p5",
+            "nk2.ch25-4.art333-45.p1"
+          ]
+        }
+      },
+      "q42": {
+        "topic": "проверки",
+        "lexical": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch8.art58.p9",
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch23.art228.p6",
+            "nk1.ch14.art88.p2"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art89.p6",
+            "nk1.ch14.art89.p9",
+            "nk1.ch14.art89.p9.sp4",
+            "nk1.ch14-5.art105-17.p4",
+            "nk1.ch14.art89-1.p5"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art89.p9",
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch14.art89.p6",
+            "nk1.ch8.art58.p9",
+            "nk2.ch25-3.art333-33.p1"
+          ]
+        }
+      },
+      "q43": {
+        "topic": "проверки",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art101.p1",
+            "nk2.ch25-4.art333-45.p1",
+            "nk1.ch1.art11-3.p5",
+            "nk2.ch25-4.art333-45.p1.sp3",
+            "nk1.ch8.art58.p9"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art101.p1",
+            "nk1.ch14.art101.p6",
+            "nk1.ch14.art101.p1-1",
+            "nk1.ch14.art101-4.p6",
+            "nk1.ch14.art101.p9"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14.art101.p1",
+            "nk1.ch1.art11-3.p5",
+            "nk2.ch25-4.art333-45.p1",
+            "nk1.ch14.art101.p6",
+            "nk1.ch14.art101.p1-1"
+          ]
+        }
+      },
+      "q44": {
+        "topic": "сроки и требования",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch1.art6-1.p6",
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch23.art219-1.p2",
+            "nk2.ch21.art165.p9",
+            "nk2.ch23.art217-1.p2"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch1.art6-1.p6",
+            "nk1.ch1.art6-1.p7",
+            "nk1.ch1.art6-1.p1",
+            "nk2.ch21.art167.p9",
+            "nk1.ch14-5.art105-17.p3"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch1.art6-1.p6",
+            "nk1.ch1.art11-3.p5",
+            "nk2.ch25-3.art333-33.p1",
+            "nk1.ch1.art6-1.p7",
+            "nk2.ch23.art219-1.p2"
+          ]
+        }
+      },
+      "q45": {
+        "topic": "сроки и требования",
+        "lexical": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk1.ch1.art11-3.p5",
+            "nk2.ch25.art284-10.p4",
+            "nk1.ch14.art88.p2",
+            "nk2.ch34.art427.p10-1",
+            "nk1.ch1.art11-3.p1"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch10.art70.p1",
+            "nk1.ch10.art69.p3",
+            "nk1.ch10.art70.p2",
+            "nk1.ch8.art47.p3",
+            "nk1.ch10.art69.p1"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch12.art78.p9",
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch10.art70.p1",
+            "nk2.ch25.art284-10.p4",
+            "nk1.ch10.art69.p3"
+          ]
+        }
+      },
+      "q46": {
+        "topic": "сроки и требования",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch11.art75.p5-1",
+            "nk1.ch11.art75.p4",
+            "nk2.ch25.art251.p1",
+            "nk2.ch21.art149.p3",
+            "nk2.ch23.art220.p2"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch11.art75.p5-1",
+            "nk1.ch11.art75.p4",
+            "nk1.ch11.art75.p5",
+            "nk1.ch11.art75.p4.sp2",
+            "nk1.ch11.art75.p4.sp1"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch11.art75.p5-1",
+            "nk1.ch11.art75.p4",
+            "nk2.ch25.art251.p1",
+            "nk1.ch11.art75.p5",
+            "nk2.ch21.art149.p3"
+          ]
+        }
+      },
+      "q47": {
+        "topic": "сроки и требования",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch8.art45.p7",
+            "nk2.ch25.art251.p1",
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch1.art11-3.p1",
+            "nk1.ch8.art58.p9"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch8.art45.p1",
+            "nk1.ch8.art45.p7",
+            "nk1.ch8.art45.p7.sp1",
+            "nk1.ch8.art45.p9",
+            "nk1.ch8.art45.p7.sp3"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch8.art45.p7",
+            "nk1.ch1.art11-3.p1",
+            "nk1.ch8.art45.p1",
+            "nk2.ch25.art251.p1",
+            "nk1.ch1.art11-3.p5"
+          ]
+        }
+      },
+      "q48": {
+        "topic": "ответственность",
+        "lexical": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch23.art220.p2",
+            "nk2.ch25.art251.p1",
+            "nk2.ch25.art264.p1",
+            "nk2.ch23.art220.p2.sp2"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch16.art120.p1",
+            "nk1.ch16.art120.p2",
+            "nk1.ch16.art120.p3",
+            "nk1.ch16.art116.p1",
+            "nk1.ch16.art116.p2"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch25-3.art333-33.p1",
+            "nk1.ch16.art120.p1",
+            "nk2.ch23.art220.p2",
+            "nk1.ch16.art120.p2",
+            "nk2.ch25.art251.p1"
+          ]
+        }
+      },
+      "q49": {
+        "topic": "ответственность",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch16.art126.p1",
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch22.art193.p1",
+            "nk2.ch25-3.art333-19.p1",
+            "nk2.ch25-3.art333-24.p1"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch16.art126.p1",
+            "nk1.ch16.art129-14",
+            "nk1.ch16.art126.p2",
+            "nk1.ch16.art119-1",
+            "nk1.ch16.art129-15.p1"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch16.art126.p1",
+            "nk2.ch25-3.art333-21.p1",
+            "nk2.ch25-3.art333-33.p1",
+            "nk1.ch16.art129-14",
+            "nk2.ch22.art193.p1"
+          ]
+        }
+      },
+      "q50": {
+        "topic": "ответственность",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch15.art112.p1",
+            "nk2.ch23.art217-1.p2",
+            "nk2.ch23.art217.p17-2",
+            "nk2.ch23.art217.p17-2-1",
+            "nk2.ch23.art217.p17-1"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch15.art112.p1",
+            "nk1.ch15.art112.p1.sp1",
+            "nk1.ch15.art112.p4",
+            "nk1.ch15.art112.p1.sp3",
+            "nk1.ch15.art114.p3"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch15.art112.p1",
+            "nk1.ch15.art111.p1",
+            "nk2.ch23.art217-1.p2",
+            "nk1.ch15.art112.p1.sp1",
+            "nk2.ch23.art217.p17-2"
+          ]
+        }
+      },
+      "q51": {
+        "topic": "ответственность",
+        "lexical": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk2.ch25-4.art333-45.p1",
+            "nk1.ch8.art58.p9",
+            "nk1.ch1.art11-3.p5",
+            "nk2.ch23.art228.p6",
+            "nk2.ch25-4.art333-45.p1.sp3"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch16.art123.p1",
+            "nk1.ch16.art129-1.p3",
+            "nk1.ch16.art129-5",
+            "nk1.ch16.art126.p1-2",
+            "nk1.ch16.art119.p1"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch23.art231.p1",
+            "nk2.ch25-4.art333-45.p1",
+            "nk1.ch16.art123.p1",
+            "nk1.ch8.art58.p9",
+            "nk1.ch16.art129-1.p3"
+          ]
+        }
+      },
+      "q52": {
+        "topic": "ответственность",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch15.art111.p1",
+            "nk2.ch25-3.art333-33.p1.sp94",
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch22.art200.p31",
+            "nk2.ch22.art193.p1"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch15.art111.p1.sp1",
+            "nk2.ch25.art265.p2",
+            "nk1.ch15.art111.p1",
+            "nk1.ch9.art64.p5",
+            "nk2.ch25.art265.p2.sp6"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch15.art111.p1",
+            "nk1.ch15.art111.p1.sp1",
+            "nk2.ch25.art265.p2",
+            "nk2.ch25.art265.p2.sp6",
+            "nk2.ch25-3.art333-33.p1.sp94"
+          ]
+        }
+      },
+      "q53": {
+        "topic": "декларации и учёт",
+        "lexical": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch8.art58.p9",
+            "nk2.ch23.art228.p6",
+            "nk2.ch22.art203-1.p2",
+            "nk2.ch21.art176-1.p24"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch13.art81.p3",
+            "nk1.ch13.art81.p4",
+            "nk1.ch13.art81.p2",
+            "nk1.ch13.art81.p6-1",
+            "nk1.ch13.art81.p6"
+          ]
+        },
+        "hybrid": {
+          "unit": false,
+          "article": true,
+          "top": [
+            "nk2.ch21.art176-1.p24",
+            "nk2.ch22.art203-1.p20",
+            "nk1.ch1.art11-3.p5.sp3-1",
+            "nk1.ch1.art11-3.p5",
+            "nk1.ch13.art81.p3"
+          ]
+        }
+      },
+      "q54": {
+        "topic": "ТЦО и взаимозависимость",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14-4.art105-14.p1",
+            "nk1.ch14-4.art105-14.p4",
+            "nk1.ch14-4.art105-16.p3",
+            "nk1.ch14-4.art105-15.p8",
+            "nk1.ch14-4.art105-16.p3.sp7"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14-4.art105-15.p8",
+            "nk1.ch14-4.art105-14.p10",
+            "nk1.ch14-4.art105-16.p3.sp7",
+            "nk1.ch14-4.art105-14.p1",
+            "nk1.ch14-4.art105-14.p3"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14-4.art105-14.p1",
+            "nk1.ch14-4.art105-15.p8",
+            "nk1.ch14-4.art105-16.p3.sp7",
+            "nk1.ch14-4.art105-14.p4",
+            "nk1.ch14-4.art105-16.p3"
+          ]
+        }
+      },
+      "q55": {
+        "topic": "ТЦО и взаимозависимость",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14-4.art105-14.p3",
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch22.art193.p1",
+            "nk2.ch25.art251.p1",
+            "nk2.ch23.art220.p2"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14-4.art105-14.p3",
+            "nk1.ch14-4.art105-14.p9",
+            "nk1.ch14-4.art105-14.p10",
+            "nk1.ch14-6.art105-19.p1",
+            "nk1.ch14-4.art105-14.p5"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch14-4.art105-14.p3",
+            "nk2.ch25-3.art333-33.p1",
+            "nk1.ch14-4.art105-14.p9",
+            "nk2.ch22.art193.p1",
+            "nk1.ch14-4.art105-14.p10"
+          ]
+        }
+      },
+      "q56": {
+        "topic": "необоснованная выгода",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch8.art54-1.p3",
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch25-3.art333-35.p3",
+            "nk2.ch25.art251.p1",
+            "nk2.ch23.art218.p1"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch8.art54-1.p3",
+            "nk1.ch19.art139-3.p1.sp7",
+            "nk1.ch11.art75.p7",
+            "nk2.ch26-5.art346-46.p4",
+            "nk1.ch19.art139-3.p1"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch8.art54-1.p3",
+            "nk2.ch25.art251.p1",
+            "nk2.ch25-3.art333-33.p1",
+            "nk1.ch19.art139-3.p1.sp7",
+            "nk2.ch25-3.art333-35.p3"
+          ]
+        }
+      },
+      "q57": {
+        "topic": "НДС",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art170.p3",
+            "nk2.ch21.art170.p3.sp6",
+            "nk2.ch21.art170.p3.sp2",
+            "nk2.ch21.art145.p8",
+            "nk2.ch21.art171-1.p6"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art171-1.p2",
+            "nk2.ch21.art171-1.p1",
+            "nk2.ch21.art170.p3",
+            "nk2.ch21.art171-1.p5",
+            "nk2.ch21.art171-1.p7"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art170.p3",
+            "nk2.ch21.art170.p3.sp6",
+            "nk2.ch21.art145.p8",
+            "nk2.ch21.art170.p3.sp3",
+            "nk2.ch21.art162-2.p1.sp2"
+          ]
+        }
+      },
+      "q58": {
+        "topic": "НДС",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art146.p2",
+            "nk2.ch23.art214-4.p7",
+            "nk2.ch23.art214-3.p11",
+            "nk2.ch22.art180.p2",
+            "nk2.ch25.art282.p1"
+          ]
+        },
+        "dense": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk2.ch31.art389.p2",
+            "nk2.ch21.art149.p6",
+            "nk2.ch32.art401.p3",
+            "nk2.ch25-2.art333-9.p2",
+            "nk2.ch26-5.art346-43.p11"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art146.p2",
+            "nk2.ch31.art389.p2",
+            "nk2.ch23.art214-4.p7",
+            "nk2.ch21.art149.p6",
+            "nk2.ch23.art214-3.p11"
+          ]
+        }
+      },
+      "q59": {
+        "topic": "НДС",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art145.p1",
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch23.art220.p2",
+            "nk2.ch22.art193.p1",
+            "nk2.ch23.art219.p1"
+          ]
+        },
+        "dense": {
+          "unit": false,
+          "article": true,
+          "top": [
+            "nk2.ch21.art145.p5",
+            "nk2.ch25.art246-1-1.p5",
+            "nk2.ch21.art145.p4",
+            "nk2.ch21.art145-2.p4",
+            "nk2.ch21.art164.p8.sp1"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art145.p1",
+            "nk2.ch21.art145.p5",
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch25.art246-1-1.p5",
+            "nk2.ch23.art220.p2"
+          ]
+        }
+      },
+      "q60": {
+        "topic": "НДС",
+        "lexical": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk1.ch14.art88.p8-1",
+            "nk2.rviii-1.art346-1.p3",
+            "nk1.ch14.art88.p2",
+            "nk2.ch26-2.art346-15.p1",
+            "nk2.ch26.art340.p6"
+          ]
+        },
+        "dense": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk2.ch26.art345.p2",
+            "nk2.ch25.art271.p4.sp18",
+            "nk2.ch26-2.art346-23.p2",
+            "nk2.ch26-2.art346-23.p1.sp1",
+            "nk2.ch25-4.art333-56.p3"
+          ]
+        },
+        "hybrid": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk1.ch14.art88.p2",
+            "nk2.ch26.art345.p2",
+            "nk2.rviii-1.art346-1.p3",
+            "nk2.ch25.art271.p4.sp18",
+            "nk1.ch14.art88.p8-1"
+          ]
+        }
+      },
+      "q61": {
+        "topic": "НДФЛ",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch23.art217-1.p4",
+            "nk2.ch23.art220.p2",
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch25.art251.p1",
+            "nk2.ch23.art220.p2.sp2"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch23.art217-1.p4",
+            "nk2.ch23.art217-1.p3",
+            "nk2.ch23.art217-1.p6.sp1",
+            "nk2.ch23.art219-2.p4",
+            "nk2.ch23.art217-1.p6"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch23.art217-1.p4",
+            "nk2.ch23.art220.p2",
+            "nk2.ch23.art217-1.p2",
+            "nk2.ch25.art258.p3",
+            "nk2.ch25.art284-10.p4"
+          ]
+        }
+      },
+      "q62": {
+        "topic": "НДФЛ",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch23.art219.p1",
+            "nk2.ch23.art219.p1.sp2",
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch25.art264.p1",
+            "nk2.ch23.art220.p2"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch23.art219.p1.sp2",
+            "nk2.ch23.art219.p1.sp7",
+            "nk2.ch23.art219.p1.sp3",
+            "nk2.ch23.art218.p1.sp4",
+            "nk2.ch21.art146.p2.sp25"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch23.art219.p1.sp2",
+            "nk2.ch23.art219.p1.sp3",
+            "nk2.ch23.art218.p1.sp4",
+            "nk2.ch25-3.art333-19.p1.sp1",
+            "nk2.ch23.art219.p1"
+          ]
+        }
+      },
+      "q63": {
+        "topic": "НДФЛ",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch23.art220.p3",
+            "nk2.ch23.art220.p3.sp1",
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch23.art220.p2",
+            "nk2.ch25-4.art333-45.p1"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch23.art220.p3.sp1",
+            "nk2.ch23.art220.p1.sp3",
+            "nk2.ch23.art220.p3",
+            "nk2.ch23.art220.p5",
+            "nk2.ch23.art220.p2.sp1"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch23.art220.p3.sp1",
+            "nk2.ch23.art220.p3",
+            "nk2.ch23.art220.p2",
+            "nk2.ch23.art220.p1.sp3",
+            "nk2.ch25-3.art333-33.p1"
+          ]
+        }
+      },
+      "q64": {
+        "topic": "взносы",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch34.art422.p1",
+            "nk2.ch26-5.art346-51.p1-2",
+            "nk2.ch25.art251.p1",
+            "nk1.ch8.art58.p9",
+            "nk2.ch26-5.art346-51.p1-2.sp3"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch34.art420.p4",
+            "nk2.ch34.art422.p1",
+            "nk2.ch34.art420.p5",
+            "nk2.ch34.art422.p1.sp1",
+            "nk2.ch34.art422.p3"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch34.art422.p1",
+            "nk2.ch26-5.art346-51.p1-2.sp3",
+            "nk2.ch23.art213-1.p1",
+            "nk2.ch34.art420.p4",
+            "nk2.ch26-5.art346-51.p1-2"
+          ]
+        }
+      },
+      "q65": {
+        "topic": "прибыль",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch25.art252.p1",
+            "nk2.ch25.art264.p1",
+            "nk2.ch23.art220.p2",
+            "nk2.ch25.art265.p1",
+            "nk2.rviii-1.art346-5.p2"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch25.art252.p1",
+            "nk2.ch26-4.art346-38.p5",
+            "nk2.ch25.art299-4.p1",
+            "nk2.ch25-4.art333-48.p3",
+            "nk2.rviii-1.art346-5.p2.sp28"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch25.art252.p1",
+            "nk2.ch25.art265.p1",
+            "nk2.ch25.art272.p7",
+            "nk2.ch25-4.art333-47.p5",
+            "nk2.ch26-4.art346-38.p9"
+          ]
+        }
+      },
+      "q66": {
+        "topic": "прибыль",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch25.art283.p6",
+            "nk2.ch25.art283.p6.sp3",
+            "nk2.ch25-4.art333-51.p1-1",
+            "nk2.ch25.art283.p2-1",
+            "nk1.ch8.art58.p9"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch25.art283.p6",
+            "nk2.ch23.art225.p1",
+            "nk2.ch23.art225.p1-5",
+            "nk2.ch25-4.art333-51.p1-1",
+            "nk2.ch25.art283.p2-1"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch25.art283.p6",
+            "nk2.ch25-4.art333-51.p1-1",
+            "nk2.ch25.art283.p6.sp3",
+            "nk2.ch25.art283.p2-1",
+            "nk2.ch25.art286-1.p3"
+          ]
+        }
+      },
+      "q67": {
+        "topic": "прибыль",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch25.art265.p1",
+            "nk2.ch25.art264.p1",
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch25.art251.p1",
+            "nk2.ch34.art427.p1"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch25.art318.p2",
+            "nk2.ch25.art265.p1",
+            "nk2.ch25.art315.p6",
+            "nk2.ch25.art265.p1.sp8",
+            "nk2.ch25.art265.p1.sp11"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch25.art265.p1",
+            "nk2.ch25.art318.p2",
+            "nk2.ch25.art264.p1",
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch25.art315.p6"
+          ]
+        }
+      },
+      "q68": {
+        "topic": "спецрежимы",
+        "lexical": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch23.art220.p2",
+            "nk2.ch25.art251.p1",
+            "nk2.ch23.art220.p2.sp2",
+            "nk2.ch22.art193.p1"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch26-2.art346-13.p4",
+            "nk2.ch21.art164.p8.sp2",
+            "nk2.ch21.art145.p5",
+            "nk2.ch21.art164.p8.sp1",
+            "nk2.ch26-2.art346-13.p4-1"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art145.p1",
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch26-2.art346-13.p4",
+            "nk2.ch23.art220.p2",
+            "nk2.ch21.art164.p8.sp2"
+          ]
+        }
+      },
+      "q69": {
+        "topic": "спецрежимы",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch26-2.art346-20.p2",
+            "nk2.ch25.art251.p1",
+            "nk2.ch25-4.art333-45.p1",
+            "nk2.ch23.art220.p2",
+            "nk2.ch25.art264.p1"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch26-2.art346-20.p2",
+            "nk2.ch25.art247.p1",
+            "nk2.ch25.art284-3.p3-1",
+            "nk2.ch23.art224.p1-2",
+            "nk2.ch25.art284-9.p3"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch26-2.art346-20.p2",
+            "nk2.ch25.art286-1.p3",
+            "nk2.ch25.art251.p1",
+            "nk2.ch25.art247.p1",
+            "nk2.ch25-4.art333-45.p1"
+          ]
+        }
+      },
+      "q70": {
+        "topic": "ответственность",
+        "lexical": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch23.art220.p2",
+            "nk2.ch25.art251.p1",
+            "nk2.ch23.art219.p1",
+            "nk2.ch23.art220.p2.sp2"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch15.art114.p3",
+            "nk1.ch1.art11-3.p7.sp1",
+            "nk1.ch1.art11-3.p7",
+            "nk2.ch25.art270.p48-21",
+            "nk1.ch16.art129-12"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk1.ch15.art114.p3",
+            "nk2.ch25-3.art333-33.p1",
+            "nk2.ch23.art220.p2",
+            "nk1.ch1.art11-3.p7.sp1",
+            "nk2.ch25.art251.p1"
+          ]
+        }
+      },
+      "q71": {
+        "topic": "НДС",
+        "lexical": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art172.p1-1",
+            "nk2.ch22.art200.p27",
+            "nk2.ch23.art219.p1",
+            "nk1.ch8.art58.p9",
+            "nk1.ch1.art11-3.p5"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art172.p1-1",
+            "nk2.ch23.art221-1.p2",
+            "nk2.ch23.art221-1.p5",
+            "nk2.ch23.art220-2.p5",
+            "nk2.ch23.art220-1.p3"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art172.p1-1",
+            "nk2.ch22.art200.p27",
+            "nk2.ch23.art221-1.p2",
+            "nk2.ch23.art219.p1",
+            "nk2.ch23.art221-1.p5"
+          ]
+        }
+      },
+      "q72": {
+        "topic": "спецрежимы",
+        "lexical": {
+          "unit": false,
+          "article": false,
+          "top": [
+            "nk2.ch21.art145.p5",
+            "nk2.ch23.art220.p2",
+            "nk2.ch25.art251.p1",
+            "nk2.ch23.art220.p2.sp2",
+            "nk2.ch23.art214-1.p13"
+          ]
+        },
+        "dense": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch26-5.art346-45.p6.sp1",
+            "nk2.ch26-5.art346-45.p6",
+            "nk2.ch26-5.art346-45.p8",
+            "nk2.ch26-5.art346-45.p6.sp4",
+            "nk2.ch26-2.art346-13.p4"
+          ]
+        },
+        "hybrid": {
+          "unit": true,
+          "article": true,
+          "top": [
+            "nk2.ch21.art145.p5",
+            "nk2.ch26-5.art346-45.p6.sp1",
+            "nk2.ch23.art220.p2",
+            "nk2.ch26-5.art346-45.p6",
+            "nk2.ch25.art251.p1"
+          ]
+        }
+      }
+    }
+  }
+}
